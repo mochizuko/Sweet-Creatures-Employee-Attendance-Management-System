@@ -1,1 +1,1 @@
-# Sweet Creatures Employee Attendance and Payroll
+# Sweet Creatures Employee Attendance Management System 
