@@ -16,5 +16,7 @@ Leave it running, then open http://localhost:5000. Stopping the debugger will st
 
 ## Test Account
 Admin:	Default development account: username: lysa, PIN:  12345
-To create new staff, the admin creates it in Staff Management > + Add Staff (role Staff, PIN 4 to 6 digits)	
+
+To test staff access, the admin creates it in Staff Management > + Add Staff (role Staff, PIN 4 to 6 digits)	
+
 
