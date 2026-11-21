@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { authenticate } = require('../middleware/auth'); // must set req.user = { user_id, role }
+const { authenticate } = require('../middleware/authMiddleware'); // must set req.user = { user_id, role }
 const controller = require('../controllers/attendanceController');
 
 router.use(authenticate);

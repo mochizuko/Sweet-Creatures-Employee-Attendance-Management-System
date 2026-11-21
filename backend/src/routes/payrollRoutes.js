@@ -1,7 +1,7 @@
 // routes/payrollRoutes.js
 const express = require('express');
 const router = express.Router();
-const { authenticate } = require('../middleware/auth'); // sets req.user = { user_id, role }
+const { authenticate } = require('../middleware/authMiddleware'); // sets req.user = { user_id, role }
 const c = require('../controllers/payrollController');
 
 const requireAdmin = (req, res, next) =>
