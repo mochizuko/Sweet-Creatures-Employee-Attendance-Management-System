@@ -8,8 +8,9 @@ ENV NODE_ENV=production
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
-# Then copy the source code
+# Then copy the source code and the database setup file
 COPY src ./src
+COPY db ./db
 
 EXPOSE 3000
 USER node
