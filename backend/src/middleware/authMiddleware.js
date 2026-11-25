@@ -16,7 +16,7 @@ async function authenticate(req, res, next) {
       return res.status(401).json({ message: 'Account is inactive or no longer exists.' });
     }
 
-    req.user = { id: user.user_id, role: user.account_role };
+    req.user = { id: user.user_id, user_id: user.user_id, role: user.account_role };
     req.currentUser = user;
     next();
   } catch (err) {
