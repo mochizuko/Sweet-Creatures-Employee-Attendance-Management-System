@@ -17,6 +17,7 @@ router.get('/payslips/:payslipId', c.getPayslip); // admin: any; employee: own +
 
 // Admin only
 router.post('/cutoffs', requireAdmin, c.createCutoff);
+router.post('/cutoffs/ensure', requireAdmin, c.ensureCutoff);
 router.get('/cutoffs', requireAdmin, c.listCutoffs);
 router.post('/cutoffs/:cutoffId/generate', requireAdmin, c.generate);
 router.get('/cutoffs/:cutoffId/payslips', requireAdmin, c.listCutoffPayslips);

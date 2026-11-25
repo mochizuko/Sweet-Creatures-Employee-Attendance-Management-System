@@ -25,6 +25,16 @@ exports.createCutoff = async (req, res) => {
   } catch (err) { handleError(res, err); }
 };
 
+exports.ensureCutoff = async (req, res) => {
+  try {
+    const { start_date, end_date } = req.body;
+    if (!DATE_RE.test(start_date || '') || !DATE_RE.test(end_date || '')) {
+      return res.status(400).json({ success: false, message: 'start_date and end_date must be YYYY-MM-DD' });
+    }
+    res.json({ success: true, data: await payroll.ensureCutoff({ start_date, end_date }) });
+  } catch (err) { handleError(res, err); }
+};
+
 exports.listCutoffs = async (req, res) => {
   try {
     res.json({ success: true, data: await payroll.listCutoffs() });

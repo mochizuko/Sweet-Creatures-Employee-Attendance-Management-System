@@ -50,6 +50,12 @@ async function main() {
   await db.query("ALTER TABLE `cash_advance` MODIFY `status` ENUM('Pending','Approved','Deducted','Rejected') NOT NULL DEFAULT 'Pending'");
   await addColumn('cash_advance', 'notes', 'VARCHAR(255) NULL');
 
+  // Payslip breakdown (basic pay, overtime pay and late/undertime deduction)
+  await addColumn('payslip', 'basic_pay', 'DECIMAL(10,2) NOT NULL DEFAULT 0.00');
+  await addColumn('payslip', 'overtime_pay', 'DECIMAL(10,2) NOT NULL DEFAULT 0.00');
+  await addColumn('payslip', 'late_undertime_minutes', 'INT NOT NULL DEFAULT 0');
+  await addColumn('payslip', 'late_undertime_deduction', 'DECIMAL(10,2) NOT NULL DEFAULT 0.00');
+
   console.log('Migration complete.');
   process.exit(0);
 }

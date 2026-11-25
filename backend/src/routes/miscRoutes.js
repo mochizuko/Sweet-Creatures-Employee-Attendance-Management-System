@@ -23,6 +23,7 @@ sopRouter.put('/:id', admin, wrap(async (req, res) => res.json(await sops.save(i
 const cashRouter = express.Router();
 cashRouter.use(authenticate);
 cashRouter.get('/mine', wrap(async (req, res) => res.json(await cash.mine(req.user.id))));
+cashRouter.get('/limit', admin, wrap(async (req, res) => res.json({ success: true, data: await cash.limit(req.query) })));
 cashRouter.get('/', admin, wrap(async (req, res) => res.json({ success: true, data: await cash.list(req.query) })));
 cashRouter.post('/', admin, wrap(async (req, res) => res.status(201).json({ success: true, data: await cash.create(req.body || {}, req.user.id) })));
 cashRouter.patch('/:id', admin, wrap(async (req, res) => res.json({ success: true, data: await cash.setStatus(idParam(req), req.body || {}) })));

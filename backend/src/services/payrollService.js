@@ -34,6 +34,13 @@ async function createCutoff({ start_date, end_date }) {
   return { cutoff_id: r.insertId, start_date, end_date, status: 'Open' };
 }
 
+// Find the cutoff with exactly these dates, or create it.
+async function ensureCutoff({ start_date, end_date }) {
+  const [rows] = await db.query('SELECT * FROM payslip_cutoff WHERE start_date = ? AND end_date = ?', [start_date, end_date]);
+  if (rows[0]) return rows[0];
+  return createCutoff({ start_date, end_date });
+}
+
 async function listCutoffs() {
   const [rows] = await db.query(
     `SELECT * FROM payslip_cutoff ORDER BY start_date DESC`
@@ -61,31 +68,32 @@ async function generatePayslips(cutoffId) {
     if (cutoff.status === 'Closed') throw new AppError('Cutoff is closed', 409);
 
     const [employees] = await conn.query(
-      `SELECT u.user_id, u.hourly_rate,
-              COUNT(ar.record_id)                          AS days_worked,
-              COALESCE(SUM(ar.total_hours_worked), 0)      AS total_hours,
-              COALESCE(SUM(ar.overtime_hours), 0)          AS overtime_hours,
-              COALESCE(SUM(ar.undertime_hours), 0)         AS undertime_hours
-         FROM \`user\` u
-         LEFT JOIN attendance_record ar
-                ON ar.user_id = u.user_id
-               AND ar.time_out IS NOT NULL
-               AND ar.review_status IN ('None', 'Approved')
-               AND ar.attendance_date BETWEEN ? AND ?
-        WHERE u.account_role = 'Staff' AND u.account_status = 'Active'
-        GROUP BY u.user_id, u.hourly_rate`,
+      `SELECT user_id, hourly_rate FROM \`user\`
+        WHERE account_role = 'Staff' AND account_status = 'Active'`
+    );
+    // Only completed shifts that are not waiting on (or failed) owner review are paid.
+    const [records] = await conn.query(
+      `SELECT user_id, status, total_hours_worked, overtime_hours
+         FROM attendance_record
+        WHERE time_out IS NOT NULL
+          AND review_status IN ('None', 'Approved')
+          AND attendance_date BETWEEN ? AND ?`,
       [cutoff.start_date, cutoff.end_date]
     );
+    const recsBy = new Map();
+    for (const r of records) {
+      if (!recsBy.has(r.user_id)) recsBy.set(r.user_id, []);
+      recsBy.get(r.user_id).push(r);
+    }
 
     const [existing] = await conn.query(
-      `SELECT payslip_id, user_id, status, cash_advance_deduction
-         FROM payslip WHERE cutoff_id = ? FOR UPDATE`,
+      `SELECT payslip_id, user_id, status FROM payslip WHERE cutoff_id = ? FOR UPDATE`,
       [cutoffId]
     );
     const byUser = new Map(existing.map((p) => [p.user_id, p]));
 
     const policy = await policyService.current(conn);
-    // Approved cash advances for this cutoff are deducted automatically (never more than gross pay).
+    // Approved cash advances for this cutoff are deducted automatically (never more than the pay).
     const [adv] = await conn.query(
       `SELECT user_id, SUM(amount) AS total FROM cash_advance
         WHERE cutoff_id = ? AND status = 'Approved' GROUP BY user_id`, [cutoffId]);
@@ -100,31 +108,50 @@ async function generatePayslips(cutoffId) {
 
       if (e.hourly_rate == null) missingRate.push(e.user_id);
       const rate = Number(e.hourly_rate || 0);
-      const totalHours = round2(e.total_hours);
-      const overtime = round2(e.overtime_hours);
-      const undertime = round2(e.undertime_hours);
-      const gross = computePay({ totalHours, overtimeHours: overtime, rate, otMultiplier: policy.otMultiplier });
+      const recs = recsBy.get(e.user_id) || [];
+      const days = recs.length;
+
+      let totalHours = 0, overtime = 0, shortMinutes = 0;
+      for (const r of recs) {
+        const worked = Number(r.total_hours_worked);
+        totalHours += worked;
+        overtime += Number(r.overtime_hours);
+        // Time not worked below the standard shift is unpaid. Arriving within the
+        // grace period is not penalised unless the shortfall is bigger than the grace period.
+        let shortfall = Math.max(0, Math.round(policy.standardShift * 60 - worked * 60));
+        if (r.status === 'OnTime' && shortfall <= policy.graceMinutes) shortfall = 0;
+        shortMinutes += shortfall;
+      }
+      totalHours = round2(totalHours);
+      overtime = round2(overtime);
+
+      const basic = round2(days * policy.standardShift * rate);
+      const otPay = round2(overtime * rate * policy.otMultiplier);
+      const lateDeduction = round2((shortMinutes / 60) * rate);
+      const gross = Math.max(0, round2(basic + otPay - lateDeduction));
       const deduction = round2(Math.min(advanceBy.get(e.user_id) || 0, gross));
       const net = round2(gross - deduction);
 
       if (prev) {
         await conn.query(
           `UPDATE payslip
-              SET days_worked = ?, total_hours_worked = ?, overtime_hours = ?,
-                  undertime_hours = ?, hourly_rate = ?, gross_pay = ?,
-                  cash_advance_deduction = ?, net_pay = ?
+              SET days_worked = ?, total_hours_worked = ?, overtime_hours = ?, undertime_hours = ?,
+                  hourly_rate = ?, basic_pay = ?, overtime_pay = ?, late_undertime_minutes = ?,
+                  late_undertime_deduction = ?, gross_pay = ?, cash_advance_deduction = ?, net_pay = ?
             WHERE payslip_id = ?`,
-          [e.days_worked, totalHours, overtime, undertime, rate, gross, deduction, net, prev.payslip_id]
+          [days, totalHours, overtime, round2(shortMinutes / 60), rate, basic, otPay, shortMinutes,
+           lateDeduction, gross, deduction, net, prev.payslip_id]
         );
         updated++;
       } else {
         await conn.query(
           `INSERT INTO payslip
-             (user_id, cutoff_id, days_worked, total_hours_worked, gross_pay,
-              cash_advance_deduction, net_pay, overtime_hours, undertime_hours,
-              hourly_rate, status)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Draft')`,
-          [e.user_id, cutoffId, e.days_worked, totalHours, gross, deduction, net, overtime, undertime, rate]
+             (user_id, cutoff_id, days_worked, total_hours_worked, overtime_hours, undertime_hours,
+              hourly_rate, basic_pay, overtime_pay, late_undertime_minutes, late_undertime_deduction,
+              gross_pay, cash_advance_deduction, net_pay, status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Draft')`,
+          [e.user_id, cutoffId, days, totalHours, overtime, round2(shortMinutes / 60), rate, basic, otPay,
+           shortMinutes, lateDeduction, gross, deduction, net]
         );
         created++;
       }
@@ -151,20 +178,18 @@ async function listPayslipsForCutoff(cutoffId) {
     [cutoffId]
   );
   const policy = await policyService.current();
-  return rows.map((p) => {
-    // Breakdown so the owner can verify the numbers by hand.
-    const overtime = Number(p.overtime_hours);
-    const regularHours = round2(Math.max(0, Number(p.total_hours_worked) - overtime));
-    const rate = Number(p.hourly_rate);
-    return {
-      ...p,
-      name: [p.first_name, p.middle_name, p.last_name].filter(Boolean).join(' '),
-      regular_hours: regularHours,
-      regular_pay: round2(regularHours * rate),
-      overtime_pay: round2(overtime * rate * policy.otMultiplier),
-      ot_multiplier: policy.otMultiplier,
-    };
-  });
+  const num = (v) => Number(v);
+  return rows.map((p) => ({
+    payslip_id: p.payslip_id, user_id: p.user_id, cutoff_id: p.cutoff_id, status: p.status,
+    name: [p.first_name, p.middle_name, p.last_name].filter(Boolean).join(' '),
+    job_position: p.job_position,
+    days_worked: p.days_worked, total_hours_worked: num(p.total_hours_worked),
+    hourly_rate: num(p.hourly_rate), basic_pay: num(p.basic_pay),
+    overtime_hours: num(p.overtime_hours), overtime_pay: num(p.overtime_pay),
+    late_undertime_minutes: p.late_undertime_minutes, late_undertime_deduction: num(p.late_undertime_deduction),
+    gross_pay: num(p.gross_pay), cash_advance_deduction: num(p.cash_advance_deduction), net_pay: num(p.net_pay),
+    ot_multiplier: policy.otMultiplier, standard_shift: policy.standardShift,
+  }));
 }
 
 async function updateDraft(payslipId, { cash_advance_deduction }) {
@@ -270,6 +295,6 @@ async function getPayslip(payslipId, requester) {
 }
 
 module.exports = {
-  createCutoff, listCutoffs, generatePayslips, listPayslipsForCutoff,
+  createCutoff, ensureCutoff, listCutoffs, generatePayslips, listPayslipsForCutoff,
   updateDraft, finalizeCutoff, listOwnPayslips, getPayslip, AppError,
 };
