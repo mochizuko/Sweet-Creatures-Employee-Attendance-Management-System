@@ -1,4 +1,4 @@
-const CACHE = 'sc-staff-v8';
+const CACHE = 'sc-staff-v9';
 const SHELL = ['staff-index.html', 'staff-style.css', 'staff-api.js', 'staff-app.js', 'assets/staff-manifest.webmanifest', 'assets/staff-icon.svg'];
 
 self.addEventListener('install', e => {

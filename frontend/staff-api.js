@@ -174,6 +174,29 @@
     }
   };
 
+  /* The backend returns snake_case payslip fields; the staff screens read camelCase. Accept both. */
+  const pickFirst = (o, ...keys) => { for (const k of keys) if (o[k] != null) return o[k]; return undefined; };
+  const cutoffText = p => {
+    if (p.cutoff) return p.cutoff;
+    const s = pickFirst(p, 'start_date', 'cutoff_start', 'startDate'), e = pickFirst(p, 'end_date', 'cutoff_end', 'endDate');
+    if (!s || !e) return '';
+    const f = d => new Date(String(d).slice(0, 10) + 'T00:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+    return `${f(s)} - ${f(e)}, ${String(e).slice(0, 4)}`;
+  };
+  const normalizePayslip = p => ({
+    ...p,
+    id: pickFirst(p, 'id', 'payslip_id'),
+    cutoff: cutoffText(p),
+    daysWorked: pickFirst(p, 'daysWorked', 'days_worked') ?? 0,
+    regularHours: pickFirst(p, 'regularHours', 'total_hours_worked', 'hours') ?? 0,
+    basicPay: pickFirst(p, 'basicPay', 'basic_pay') ?? 0,
+    lateDeduction: pickFirst(p, 'lateDeduction', 'late_undertime_deduction') ?? 0,
+    overtimeHours: pickFirst(p, 'overtimeHours', 'overtime_hours') ?? 0,
+    overtimePay: pickFirst(p, 'overtimePay', 'overtime_pay') ?? 0,
+    cashAdvanceDeduction: pickFirst(p, 'cashAdvanceDeduction', 'cash_advance_deduction') ?? 0,
+    netPay: pickFirst(p, 'netPay', 'net_pay') ?? 0
+  });
+
   /* ---------- backend mode ---------- */
   const remote = {
     login: async (username, pin) => {
@@ -185,7 +208,7 @@
     records: user => http(ENDPOINTS.records, null, { staffId: user.id }),
     policy: () => http(ENDPOINTS.policy),
     sops: () => http(ENDPOINTS.sops),
-    payslips: () => http(ENDPOINTS.payslips).then(arr).then(a => a.filter(p => p.status === 'Finalized')),
+    payslips: () => http(ENDPOINTS.payslips).then(arr).then(a => a.filter(p => p.status === 'Finalized').map(normalizePayslip)),
     advances: () => http(ENDPOINTS.advances).then(arr),
     submit: rec => http(ENDPOINTS.submit, rec)
   };

@@ -28,7 +28,8 @@ const state = {
   policies: [],
   cutoffs: [],
   payslips: [],
-  summaryDay: null
+  summaryDay: null,
+  sops: []
 };
 
 const message = document.querySelector('#app-message');
@@ -177,6 +178,11 @@ async function loadPolicies() {
   renderPolicies();
   fillPolicyForm();
 }
+async function loadSops() {
+  const result = await apiRequest('/sops?all=1');
+  state.sops = Array.isArray(result) ? result : (result.data || []);
+  renderSops();
+}
 async function loadCutoffs() {
   state.cutoffs = (await apiRequest('/payroll/cutoffs')).data;
   renderSummary();
@@ -191,7 +197,7 @@ async function loadPayroll() {
   renderPayroll();
 }
 async function loadAll() {
-  await Promise.all([loadEmployees(), loadDay(), loadFlagged(), loadCash(), loadPolicies(), loadCutoffs()]);
+  await Promise.all([loadEmployees(), loadDay(), loadFlagged(), loadCash(), loadPolicies(), loadCutoffs(), loadSops()]);
   await loadPayroll();
   updateCashAdvanceLimit();
 }
@@ -231,6 +237,18 @@ function renderAttendance() {
     }).join('')
     : '<tr><td colspan="6">No active staff yet.</td></tr>';
   applyFilter(document.querySelector('[data-filter-group="attendance"]'));
+}
+
+function renderSops() {
+  const rows = document.querySelector('#sop-rows');
+  if (!rows) return;
+  rows.innerHTML = state.sops.length
+    ? state.sops.map(sop => {
+      const published = sop.status === 'published';
+      const updated = sop.updatedAt ? new Date(sop.updatedAt).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : '--';
+      return `<tr><td>${escapeHtml(sop.title)}</td><td>${escapeHtml(sop.version)}</td><td>${escapeHtml(updated)}</td><td><span class="badge badge-${published ? 'green' : 'gold'}">${published ? 'Published' : 'Draft'}</span></td><td><button class="action-button" type="button" data-sop-edit="${escapeHtml(sop.id)}">Edit</button></td></tr>`;
+    }).join('')
+    : '<tr><td colspan="5">No SOPs yet. Select + New SOP to add one.</td></tr>';
 }
 
 function renderStaff() {
@@ -812,3 +830,50 @@ function showToday() {
 }
 showToday();
 setInterval(showToday, 1000);
+
+/* ------------------------------ SOP management ------------------------ */
+
+function openSopDialog(sop) {
+  const dialog = document.querySelector('#sop-dialog');
+  const form = document.querySelector('#sop-form');
+  form.reset();
+  dialog.dataset.sopId = sop ? sop.id : '';
+  document.querySelector('#sop-dialog-title').textContent = sop ? `Edit SOP (${sop.version})` : 'New SOP';
+  if (sop) {
+    form.elements.title.value = sop.title;
+    form.elements.body.value = sop.body || '';
+    form.elements.status.value = sop.status === 'draft' ? 'draft' : 'published';
+  }
+  dialog.showModal();
+}
+document.querySelector('#sop-new').addEventListener('click', () => openSopDialog(null));
+document.querySelector('#sop-rows').addEventListener('click', event => {
+  const button = event.target.closest('[data-sop-edit]');
+  if (!button) return;
+  const sop = state.sops.find(item => String(item.id) === button.dataset.sopEdit);
+  if (sop) openSopDialog(sop);
+});
+document.querySelector('#sop-form').addEventListener('submit', async event => {
+  if (event.submitter?.value !== 'save') return;
+  event.preventDefault();
+  const form = event.currentTarget;
+  const dialog = form.closest('dialog');
+  const values = new FormData(form);
+  const id = dialog.dataset.sopId;
+  try {
+    await apiRequest(id ? `/sops/${id}` : '/sops', {
+      method: id ? 'PUT' : 'POST',
+      body: {
+        title: String(values.get('title')).trim(),
+        body: String(values.get('body')).trim(),
+        status: values.get('status')
+      }
+    });
+  } catch (error) {
+    notify(`Could not save SOP: ${error.message}`, true);
+    return;
+  }
+  dialog.close('save');
+  await refresh(loadSops);
+  notify(id ? 'SOP updated.' : 'SOP created.');
+});
