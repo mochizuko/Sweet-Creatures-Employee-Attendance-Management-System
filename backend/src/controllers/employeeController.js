@@ -42,8 +42,7 @@ async function getEmployee(req, res) {
   try {
     const employee = await employeeService.getById(req.params.id);
     if (!employee) return res.status(404).json({ message: 'Employee not found.' });
-    const currentShift = await shiftService.currentForUser(employee.user_id);
-    res.json({ ...employee, currentShift });
+    res.json({ ...employee, currentShift: null });
   } catch (err) {
     serverError(res, err, 'Get employee');
   }
@@ -136,7 +135,6 @@ async function deactivateEmployee(req, res) {
       return res.status(400).json({ message: 'You cannot deactivate your own account.' });
     }
     await employeeService.setStatus(target.user_id, 'Inactive');
-    await shiftService.closeAssignments(target.user_id);
     res.json({ message: 'Employee deactivated.' });
   } catch (err) {
     serverError(res, err, 'Deactivate employee');
@@ -148,7 +146,7 @@ async function reactivateEmployee(req, res) {
     const target = await loadTarget(req, res);
     if (!target) return;
     await employeeService.setStatus(target.user_id, 'Active');
-    res.json({ message: 'Employee reactivated. Assign a shift again if needed.' });
+    res.json({ message: 'Employee reactivated.' });
   } catch (err) {
     serverError(res, err, 'Reactivate employee');
   }

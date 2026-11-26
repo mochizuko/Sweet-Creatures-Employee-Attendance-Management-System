@@ -1,0 +1,40 @@
+# Local test setup: MySQL + the API, started together with:  docker compose up --build
+services:
+  db:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: sweet_creatures
+    volumes:
+      - dbdata:/var/lib/mysql
+      # Runs once, the first time the database volume is created
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      # 127.0.0.1 (not "localhost") so it only passes after the schema has finished loading
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-prootpass"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  api:
+    build: ./backend
+    ports:
+      - "5000:3000"   # open http://localhost:5000 on your computer
+    environment:
+      PORT: "3000"
+      DB_HOST: db
+      DB_USER: root
+      DB_PASSWORD: rootpass
+      DB_NAME: sweet_creatures
+      JWT_SECRET: local-test-secret-change-me
+      JWT_EXPIRES_IN: 12h
+      MAX_PIN_ATTEMPTS: "5"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      # Local testing only: lets the API also serve the web pages. On AWS the pages come from S3 + CloudFront.
+      - ./frontend:/app/frontend:ro
+
+volumes:
+  dbdata:

@@ -16,3 +16,7 @@ dist/
 .idea/
 .DS_Store
 Thumbs.db
+
+dist-ready.json
+policy-ready.json
+*.zip

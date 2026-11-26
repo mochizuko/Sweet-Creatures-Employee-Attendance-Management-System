@@ -10,7 +10,9 @@ const pool = mysql.createPool({
     database: process.env.DB_NAME || 'sweet_creatures',
     waitForConnections: true,
     connectionLimit: 10,
-    queueLimit: 0
+    queueLimit: 0,
+    // Return DATE / TIME / DATETIME columns as plain strings (no timezone shifting).
+    dateStrings: true
 });
 
 module.exports = pool.promise();

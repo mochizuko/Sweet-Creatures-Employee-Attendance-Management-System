@@ -1,0 +1,116 @@
+name: CI/CD - Sweet Creatures
+
+# Runs on every push to the deployment branch (and manually from the Actions tab).
+# Backend changes -> build Docker image, push to ECR, redeploy the ECS service.
+# Frontend changes -> sync to S3 and invalidate CloudFront.
+on:
+  push:
+    branches: [Aws-deployent, main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write   # lets GitHub request short-lived AWS credentials (OIDC), so no access keys are stored
+  contents: read
+
+env:
+  AWS_REGION: ap-southeast-2
+  ECR_REPOSITORY: sweet-creatures-api
+  ECS_CLUSTER: sweet-creatures-cluster
+  ECS_SERVICE: sweet-creatures-api-service-zkj8co1t
+  S3_BUCKET: sweet-creatures-web-940836045674
+  CLOUDFRONT_DISTRIBUTION_ID: E3T9UNN9V7TOF7
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+            frontend:
+              - 'frontend/**'
+
+  test:
+    name: Check code
+    runs-on: ubuntu-latest
+    needs: changes
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install backend dependencies
+        working-directory: backend
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+      - name: Syntax-check backend and frontend JavaScript
+        run: |
+          find backend/src -name '*.js' -print0 | xargs -0 -n1 node --check
+          for f in frontend/*.js; do node --check "$f"; done
+      - name: Run backend tests (if defined)
+        working-directory: backend
+        run: npm test --if-present
+
+  deploy-backend:
+    name: Deploy backend (ECR + ECS)
+    runs-on: ubuntu-latest
+    needs: [changes, test]
+    if: needs.changes.outputs.backend == 'true' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          docker build -t "$REGISTRY/$ECR_REPOSITORY:${{ github.sha }}" -t "$REGISTRY/$ECR_REPOSITORY:latest" backend
+          docker push "$REGISTRY/$ECR_REPOSITORY:${{ github.sha }}"
+          docker push "$REGISTRY/$ECR_REPOSITORY:latest"
+
+      - name: Redeploy ECS service
+        run: |
+          aws ecs update-service --cluster "$ECS_CLUSTER" --service "$ECS_SERVICE" --force-new-deployment > /dev/null
+          aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE"
+          echo "ECS service is stable on image ${{ github.sha }}"
+
+  deploy-frontend:
+    name: Deploy frontend (S3 + CloudFront)
+    runs-on: ubuntu-latest
+    needs: [changes, test]
+    if: needs.changes.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Sync frontend to S3
+        run: aws s3 sync frontend "s3://$S3_BUCKET/" --exclude "*.md"
+
+      - name: Invalidate CloudFront cache
+        run: aws cloudfront create-invalidation --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" --paths "/*" > /dev/null

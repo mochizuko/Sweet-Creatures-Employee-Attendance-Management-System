@@ -406,3 +406,12 @@ button { -webkit-user-select: none; user-select: none; }
 @keyframes modal-in { from { opacity: 0; transform: translateY(18px) scale(.96); } }
 .modal { animation: modal-in .42s var(--ios-ease); }
 .page { animation-duration: .38s; animation-timing-function: var(--ios-ease); }
+/* ---- daily log + photo gallery ---- */
+.day-bar { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
+.day-bar .section-title { margin: 0; }
+.day-controls { display: flex; align-items: flex-end; gap: 8px; }
+.day-field { margin: 0; }
+.photo-gallery { display: grid; gap: 14px; margin: 12px 0; }
+.photo-gallery figure { margin: 0; }
+.photo-gallery figcaption { font-size: 0.85rem; margin-bottom: 4px; opacity: 0.8; }
+.photo-gallery img { width: 100%; max-height: 320px; object-fit: contain; border-radius: 8px; background: rgba(0, 0, 0, 0.06); }

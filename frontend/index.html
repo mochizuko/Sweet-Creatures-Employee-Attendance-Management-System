@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#3b2a20">
   <title>Sweet Creature | Attendance and Payroll</title>
   <link rel="stylesheet" href="styles.css">
-  <script src="app.js" defer></script>
+  <script src="app.js?v=2" defer></script>
 </head>
 <body>
   <main class="login-page" id="login" data-node-id="1:770">
@@ -37,17 +37,20 @@
     </aside>
     <main class="workspace">
       <p id="app-message" class="app-message" role="status" aria-live="polite" hidden></p>
-      <p class="storage-notice">Login and staff accounts use the backend. Attendance, payroll, advances, policies, and SOP are still prototype data stored in this browser.</p>
+      <p class="storage-notice">Staff, attendance, payroll, cash advances and policies are live data from the database.</p>
       <section class="page" id="dashboard" data-node-id="1:85">
         <header class="page-header"><h1>Dashboard</h1><span class="muted" id="today"></span></header>
         <div class="summary-grid">
-          <article class="summary-card"><p>Present Today</p><strong>7 / 10</strong></article>
-          <article class="summary-card"><p>Flagged Entries</p><strong>3</strong><button class="subtle-link" data-go="flagged">Review now</button></article>
-          <article class="summary-card"><p>Pending Cash Advances</p><strong>2</strong><button class="subtle-link" data-go="cash">Review now</button></article>
-          <article class="summary-card"><p>Next Cutoff</p><strong>Nov 15</strong></article>
+          <article class="summary-card"><p id="sum-present-label">Present Today</p><strong id="sum-present">-</strong></article>
+          <article class="summary-card"><p>Flagged Entries</p><strong id="sum-flagged">-</strong><button class="subtle-link" data-go="flagged">Review now</button></article>
+          <article class="summary-card"><p>Pending Cash Advances</p><strong id="sum-cash">-</strong><button class="subtle-link" data-go="cash">Review now</button></article>
+          <article class="summary-card"><p>Next Cutoff</p><strong id="sum-cutoff">-</strong></article>
         </div>
-        <h2 class="section-title">Today's Attendance</h2>
-        <div class="filters" data-filter-group="attendance"><button class="filter active" data-filter="all">All 10</button><button class="filter" data-filter="Late">Late 2</button><button class="filter" data-filter="Flagged">Flagged 1</button><button class="filter" data-filter="Absent">Absent 2</button></div>
+        <div class="day-bar">
+          <h2 class="section-title" id="day-title">Today's Attendance</h2>
+          <div class="day-controls"><label class="field day-field">Date<input type="date" id="day-picker"></label><button class="outline-button" type="button" id="day-today">Today</button></div>
+        </div>
+        <div class="filters" data-filter-group="attendance"><button class="filter active" data-filter="all">All 0</button><button class="filter" data-filter="OnTime">On time 0</button><button class="filter" data-filter="Late">Late 0</button><button class="filter" data-filter="Flagged">Flagged 0</button><button class="filter" data-filter="Absent">Absent 0</button></div>
         <div class="table-wrap"><table class="attendance-table"><thead><tr><th>Staff</th><th>Time In</th><th>Time Out</th><th>Hours</th><th>Status</th><th>Photo</th></tr></thead><tbody id="attendance-rows"></tbody></table></div>
       </section>
 
@@ -73,7 +76,7 @@
           <label class="field">Grace Period (minutes)<input name="gracePeriod" type="number" min="0" step="1" value="15" required></label>
           <label class="field">Late Rule<input name="lateRule" value="Deduct per minute late, after grace period" required></label>
           <label class="field">Undertime Rule<input name="undertimeRule" value="Deduct per minute of early Time Out" required></label>
-          <div class="field-grid"><label class="field">Standard Shift (hours)<input name="standardShift" type="number" min="0.1" step="0.1" value="8" required></label><label class="field">OT After (hours/day)<input name="otAfter" type="number" min="0.1" step="0.1" value="8" required></label><label class="field">OT Multiplier<input name="otMultiplier" type="number" min="1" step="0.01" value="1.25" required></label><label class="field">Effective Date<input name="effectiveDate" type="date" value="2026-11-16" required></label></div>
+          <div class="field-grid"><label class="field">Shift Start<input name="shiftStart" type="time" value="08:00" required></label><label class="field">Standard Shift (hours)<input name="standardShift" type="number" min="0.1" step="0.1" value="8" required></label><label class="field">OT After (hours/day)<input name="otAfter" type="number" min="0.1" step="0.1" value="8" required></label><label class="field">OT Multiplier<input name="otMultiplier" type="number" min="1" step="0.01" value="1.25" required></label><label class="field">Effective Date<input name="effectiveDate" type="date" value="2026-11-16" required></label></div>
           <button class="primary-button form-submit" type="submit">Save New Policy Version</button>
         </form><div class="history-panel"><h2>Version history</h2><div class="table-wrap"><table><thead><tr><th>Version</th><th>Effective Date</th><th>Saved By</th><th>Status</th></tr></thead><tbody id="policy-rows"></tbody></table></div><p class="caption">A new version applies only from its effective date.<br>Earlier payrolls keep the policy used when they were computed.</p><p class="caption">Late and undertime flags on the Flagged entries tab follow this policy.</p></div></div>
       </section>
@@ -111,16 +114,18 @@
       </section>
 
       <section class="page" id="sop" data-node-id="1:795" hidden>
-        <header class="page-header"><h1>SOP Management</h1><button class="primary-button" type="button">+ New SOP</button></header>
-        <div class="table-wrap sop-wrap"><table><thead><tr><th>Title</th><th>Version</th><th>Last Updated</th><th>Status</th><th>Actions</th></tr></thead><tbody><tr><td>Opening Procedure</td><td>v2</td><td>Oct 2026</td><td><span class="badge badge-green">Published</span></td><td class="action-text">Edit | View history</td></tr><tr><td>Customer Service Standards</td><td>v1</td><td>Sep 2026</td><td><span class="badge badge-green">Published</span></td><td class="action-text">Edit | View history</td></tr><tr><td>Staff Conduct Policy</td><td>v3</td><td>Oct 2026</td><td><span class="badge badge-green">Published</span></td><td class="action-text">Edit | View history</td></tr><tr><td>Closing Checklist</td><td>v1</td><td>Nov 2026</td><td><span class="badge badge-gold">Draft</span></td><td class="action-text">Edit | View history</td></tr></tbody></table></div>
+        <header class="page-header"><h1>SOP Management</h1><button class="primary-button" type="button" id="sop-new">+ New SOP</button></header>
+        <div class="table-wrap sop-wrap"><table><thead><tr><th>Title</th><th>Version</th><th>Last Updated</th><th>Status</th><th>Actions</th></tr></thead><tbody id="sop-rows"><tr><td colspan="5">Loading SOPs...</td></tr></tbody></table></div>
+        <p class="caption">Published SOPs are visible to staff in their app. Drafts are only visible here. Each edit raises the version number.</p>
       </section>
     </main>
   </div>
 
   <dialog class="modal" id="staff-dialog" data-node-id="1:454"><form id="staff-form" method="dialog"><h2>Add Staff</h2><p class="modal-description">The PIN is securely hashed by the backend before storage.</p><div class="field-grid modal-fields"><label class="field">Full name<input name="name" placeholder="First and last name" required></label><label class="field">Username<input name="username" autocomplete="off" required></label><label class="field">Email<input name="email" type="email" autocomplete="off" required></label><label class="field">Role<input name="role" value="Staff" required></label><label class="field">Position<input name="position" placeholder="Position" required></label><label class="field">Hourly rate (PHP)<input name="rate" type="number" min="0.01" step="0.01" placeholder="0.00" required></label><label class="field" id="staff-pin-field">Initial PIN<input name="pin" type="password" inputmode="numeric" pattern="[0-9]{4,6}" minlength="4" maxlength="6" placeholder="4 to 6 digits" required><span class="field-note">PINs are never stored in the browser.</span></label></div><div class="modal-actions"><button class="outline-button" value="cancel" formnovalidate>Cancel</button><button class="primary-button" value="save">Save Staff</button></div></form></dialog>
-  <dialog class="modal review-modal" id="review-dialog" data-node-id="1:306"><form id="review-form" method="dialog" novalidate><h2>Review flagged attendance</h2><p class="modal-description"></p><div class="field-grid modal-fields"><label class="field">Corrected Time In<input name="timeIn" type="time"></label><label class="field">Corrected Time Out<input name="timeOut" type="time"></label></div><label class="field remarks-field">Remarks (required)<textarea name="remarks" required></textarea><span class="field-note">Decision details are saved with the record in this browser.</span></label><div class="modal-actions"><button class="outline-button" value="cancel" formnovalidate>Cancel</button><button class="outline-button" value="reject">Reject</button><button class="primary-button" value="approve">Approve</button></div></form></dialog>
+  <dialog class="modal review-modal" id="review-dialog" data-node-id="1:306"><form id="review-form" method="dialog" novalidate><h2>Review flagged attendance</h2><p class="modal-description"></p><div class="field-grid modal-fields"><label class="field">Time In<input name="timeIn" type="time" readonly></label><label class="field">Time Out (enter if missing)<input name="timeOut" type="time"></label></div><label class="field remarks-field">Remarks (required)<textarea name="remarks" required></textarea><span class="field-note">Decision details are saved with the record.</span></label><div class="modal-actions"><button class="outline-button" value="cancel" formnovalidate>Cancel</button><button class="outline-button" value="reject">Reject</button><button class="primary-button" value="approve">Approve</button></div></form></dialog>
   <dialog class="modal payslip-modal" id="payslip-dialog" aria-labelledby="payslip-title"><h2 id="payslip-title">Payslip</h2><p class="modal-description" id="payslip-description"></p><div class="table-wrap"><table><tbody id="payslip-details"></tbody></table></div><div class="modal-actions"><button class="outline-button" type="button" data-close-dialog>Close</button><button class="primary-button" type="button" id="print-payslip">Print payslip</button></div></dialog>
-  <dialog class="modal" id="photo-dialog" aria-labelledby="photo-title"><h2 id="photo-title">Attendance photo</h2><p id="photo-message" class="modal-description">Photos are stored in this browser only.</p><img id="photo-preview" class="photo-preview" alt="Selected attendance evidence" hidden><form id="photo-form"><label class="field">Choose an image<input name="photo" type="file" accept="image/*" required></label><div class="modal-actions"><button class="outline-button" type="button" data-close-dialog>Close</button><button class="primary-button" type="submit">Save photo</button></div></form></dialog>
+  <dialog class="modal" id="sop-dialog"><form id="sop-form" method="dialog"><h2 id="sop-dialog-title">New SOP</h2><p class="modal-description">Write the procedure staff should follow.</p><div class="field-grid modal-fields"><label class="field">Title<input name="title" maxlength="150" required></label><label class="field">Status<select name="status"><option value="published">Published</option><option value="draft">Draft</option></select></label><label class="field" style="grid-column:1/-1">Content<textarea name="body" required style="height:180px"></textarea></label></div><div class="modal-actions"><button class="outline-button" value="cancel" formnovalidate>Cancel</button><button class="primary-button" value="save">Save SOP</button></div></form></dialog>
+  <dialog class="modal" id="photo-dialog" aria-labelledby="photo-title"><h2 id="photo-title">Attendance photos</h2><p id="photo-message" class="modal-description"></p><div id="photo-gallery" class="photo-gallery"></div><div class="modal-actions"><button class="outline-button" type="button" data-close-dialog>Close</button></div></dialog>
   <div class="row-menu-popover" id="cash-menu" role="menu" hidden></div>
 </body>
 </html>
