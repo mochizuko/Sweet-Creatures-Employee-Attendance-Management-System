@@ -78,6 +78,12 @@ async function login(req, res) {
       });
     }
 
+    if (user.account_status === 'Inactive') {
+      return res.status(403).json({
+        message: 'Account is deactivated. Please contact an administrator.',
+      });
+    }
+
     const valid = await bcrypt.compare(String(pin), user.pin_hash);
 
     if (!valid) {
