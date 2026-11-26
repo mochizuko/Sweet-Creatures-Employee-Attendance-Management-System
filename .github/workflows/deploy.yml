@@ -1,11 +1,14 @@
 name: CI/CD - Sweet Creatures
 
-# Runs on every push to the deployment branch (and manually from the Actions tab).
+# Pushes to Aws-deployent and pull requests into main run the checks only.
+# Deployment to AWS happens only from main (production), after a merge.
 # Backend changes -> build Docker image, push to ECR, redeploy the ECS service.
 # Frontend changes -> sync to S3 and invalidate CloudFront.
 on:
   push:
     branches: [Aws-deployent, main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -19,10 +22,6 @@ env:
   ECS_SERVICE: sweet-creatures-api-service-zkj8co1t
   S3_BUCKET: sweet-creatures-web-940836045674
   CLOUDFRONT_DISTRIBUTION_ID: E3T9UNN9V7TOF7
-
-concurrency:
-  group: deploy-${{ github.ref }}
-  cancel-in-progress: false
 
 jobs:
   changes:
@@ -67,7 +66,10 @@ jobs:
     name: Deploy backend (ECR + ECS)
     runs-on: ubuntu-latest
     needs: [changes, test]
-    if: needs.changes.outputs.backend == 'true' || github.event_name == 'workflow_dispatch'
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && (needs.changes.outputs.backend == 'true' || github.event_name == 'workflow_dispatch')
+    concurrency:
+      group: deploy-backend
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
 
@@ -99,7 +101,10 @@ jobs:
     name: Deploy frontend (S3 + CloudFront)
     runs-on: ubuntu-latest
     needs: [changes, test]
-    if: needs.changes.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch'
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && (needs.changes.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch')
+    concurrency:
+      group: deploy-frontend
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
 

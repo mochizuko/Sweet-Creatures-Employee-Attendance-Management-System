@@ -251,12 +251,21 @@ function renderSops() {
     : '<tr><td colspan="5">No SOPs yet. Select + New SOP to add one.</td></tr>';
 }
 
+function staffActions(person) {
+  const id = escapeHtml(person.id);
+  const buttons = [`<button class="action-button" type="button" data-staff-act="pin" data-id="${id}">Reset PIN</button>`];
+  if (person.status === 'Locked') buttons.push(`<button class="action-button" type="button" data-staff-act="unlock" data-id="${id}">Unlock</button>`);
+  if (person.status === 'Inactive') buttons.push(`<button class="action-button" type="button" data-staff-act="reactivate" data-id="${id}">Reactivate</button>`);
+  else buttons.push(`<button class="action-button" type="button" data-staff-act="deactivate" data-id="${id}">Deactivate</button>`);
+  return `<div style="display:flex;gap:12px;flex-wrap:wrap">${buttons.join('')}</div>`;
+}
+
 function renderStaff() {
   document.querySelector('#staff-rows').innerHTML = state.staff.length
     ? state.staff.map(person =>
-      `<tr data-id="${escapeHtml(person.id)}" data-status="${escapeHtml(person.status)}"><td>${escapeHtml(person.name)}</td><td>${escapeHtml(person.username)}</td><td>${escapeHtml(person.role)}</td><td>${escapeHtml(person.position)}</td><td>PHP ${formatAmount(person.rate)}</td><td>${escapeHtml(person.hired)}</td><td>${escapeHtml(person.email)}</td><td><span class="badge badge-${badgeClass[person.status] || 'neutral'}">${escapeHtml(person.status)}</span></td></tr>`
+      `<tr data-id="${escapeHtml(person.id)}" data-status="${escapeHtml(person.status)}"><td>${escapeHtml(person.name)}</td><td>${escapeHtml(person.username)}</td><td>${escapeHtml(person.role)}</td><td>${escapeHtml(person.position)}</td><td>PHP ${formatAmount(person.rate)}</td><td>${escapeHtml(person.hired)}</td><td>${escapeHtml(person.email)}</td><td><span class="badge badge-${badgeClass[person.status] || 'neutral'}">${escapeHtml(person.status)}</span></td><td>${staffActions(person)}</td></tr>`
     ).join('')
-    : '<tr><td colspan="8">No employee accounts found.</td></tr>';
+    : '<tr><td colspan="9">No employee accounts found.</td></tr>';
   applyFilter(document.querySelector('[data-filter-group="staff"]'));
 }
 
@@ -876,4 +885,65 @@ document.querySelector('#sop-form').addEventListener('submit', async event => {
   dialog.close('save');
   await refresh(loadSops);
   notify(id ? 'SOP updated.' : 'SOP created.');
+});
+
+/* ------------------------------ staff account actions ----------------- */
+
+document.querySelector('#staff-rows').addEventListener('click', async event => {
+  const button = event.target.closest('[data-staff-act]');
+  if (!button) return;
+  const person = state.staff.find(item => item.id === button.dataset.id);
+  if (!person) return;
+  const act = button.dataset.staffAct;
+
+  if (act === 'pin') {
+    const dialog = document.querySelector('#pin-dialog');
+    document.querySelector('#pin-form').reset();
+    dialog.dataset.userId = person.id;
+    document.querySelector('#pin-dialog-title').textContent = `Reset PIN: ${person.name}`;
+    dialog.showModal();
+    return;
+  }
+
+  const actions = {
+    deactivate: { url: `/employees/${person.id}/deactivate`, done: `${person.name} was deactivated and can no longer log in.`,
+      confirm: `Deactivate ${person.name}? They will be unable to log in. Their attendance and payroll history is kept.` },
+    reactivate: { url: `/employees/${person.id}/reactivate`, done: `${person.name} was reactivated.` },
+    unlock: { url: `/auth/users/${person.id}/unlock`, done: `${person.name}'s account was unlocked.` }
+  };
+  const action = actions[act];
+  if (!action) return;
+  if (action.confirm && !window.confirm(action.confirm)) return;
+  button.disabled = true;
+  try {
+    await apiRequest(action.url, { method: 'PATCH' });
+  } catch (error) {
+    button.disabled = false;
+    notify(`Could not update account: ${error.message}`, true);
+    return;
+  }
+  await refresh(loadEmployees, loadDay);
+  notify(action.done);
+});
+
+document.querySelector('#pin-form').addEventListener('submit', async event => {
+  if (event.submitter?.value !== 'save') return;
+  event.preventDefault();
+  const form = event.currentTarget;
+  const dialog = form.closest('dialog');
+  const pin = String(new FormData(form).get('pin') || '').trim();
+  if (!/^\d{4,6}$/.test(pin)) {
+    notify('PIN must be 4 to 6 digits.', true);
+    return;
+  }
+  const person = state.staff.find(item => item.id === dialog.dataset.userId);
+  try {
+    await apiRequest(`/employees/${dialog.dataset.userId}/pin`, { method: 'PATCH', body: { pin } });
+  } catch (error) {
+    notify(`Could not reset PIN: ${error.message}`, true);
+    return;
+  }
+  form.reset();
+  dialog.close('save');
+  notify(`PIN reset for ${person ? person.name : 'the account'}. Give them the new PIN privately.`);
 });
