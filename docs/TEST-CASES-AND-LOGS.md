@@ -4,7 +4,7 @@ Sweet Creatures Attendance and Payroll System, deployed on AWS (ap-southeast-2).
 Prepared: November 26, 2026. Environment: live site https://d3qyrpbrdugqq1.cloudfront.net
 
 ## How to read this document
-- **Summary:** 43 test cases. 31 PASS, 1 NOT RUN, 11 TO RUN: TC-03, TC-04, TC-08, TC-25 and TC-37 to TC-43 (last updated 2026-11-27).
+- **Summary:** 51 test cases. 31 PASS, 1 NOT RUN, 19 TO RUN: TC-03, TC-04, TC-08, TC-25 and TC-37 to TC-51 (last updated 2026-11-27).
 - **Section 1** lists the test cases. The **Result** column uses:
   - `PASS (observed)`: seen working on the live site during deployment, as noted in the log.
   - `NOT RUN`: skipped, with the reason given.
@@ -19,8 +19,8 @@ Prepared: November 26, 2026. Environment: live site https://d3qyrpbrdugqq1.cloud
 |---|---|---|---|---|---|
 | TC-01 | Admin login | Open the site, enter admin username and PIN | Dashboard opens | PASS (observed) | Admin dashboard loaded on the live site |
 | TC-02 | Wrong PIN | Log in with a wrong PIN | Message "Invalid username or PIN" with attempts left | PASS | Live site, 2026-11-26 |
-| TC-03 | Account lockout | Enter a wrong PIN 5 times for a demo account | Account locked, login returns "Account is locked" | PASS (observed) | |
-| TC-04 | Admin unlock | Staff page, Unlock on the locked account | Status becomes Active, user can log in | PASS (observed) | |
+| TC-03 | Account lockout | Enter a wrong PIN 5 times for a demo account | Account locked, login returns "Account is locked" | TO RUN | |
+| TC-04 | Admin unlock | Staff page, Unlock on the locked account | Status becomes Active, user can log in | TO RUN | |
 | TC-05 | Staff login | Log in as a demo staff on the admin login page | Redirected to the staff app | PASS (observed) | Staff app used for photo upload test |
 | TC-06 | Deactivated account | Deactivate a demo staff, then try to log in as them | Login refused with "Account is deactivated" | PASS | Live site, 2026-11-26. Deactivated account refused at login |
 
@@ -28,7 +28,7 @@ Prepared: November 26, 2026. Environment: live site https://d3qyrpbrdugqq1.cloud
 | ID | Test | Steps | Expected result | Result | Evidence |
 |---|---|---|---|---|---|
 | TC-07 | Staff list from database | Open Staff page | Demo staff (Kaye, Lysa, Trishia, Grace) listed with status | PASS (observed) | Staff list loaded |
-| TC-08 | Add staff | Add Staff, fill the form, save | New account appears in the list | PASS (observed) | |
+| TC-08 | Add staff | Add Staff, fill the form, save | New account appears in the list | TO RUN | |
 | TC-09 | Admin PIN reset | Staff page, Reset PIN, enter 4 to 6 digits | Success message. New PIN works at login, old one does not | PASS | Live site, 2026-11-26. PIN reset by admin, login with new PIN |
 | TC-10 | Deactivate and reactivate | Deactivate (confirm), then Reactivate | Status changes Inactive then Active. History is kept | PASS | Live site, 2026-11-26. Deactivate then reactivate |
 | TC-11 | PIN validation | Reset PIN with 3 digits or letters | Rejected with "PIN must be 4 to 6 digits" | PASS | Live site, 2026-11-26. Short PIN rejected |
@@ -81,6 +81,18 @@ Prepared: November 26, 2026. Environment: live site https://d3qyrpbrdugqq1.cloud
 | TC-41 | Late time-out held as overtime | Time out more than the grace period after the regular time-out | Flagged "Overtime pending approval (n h)". Paid hours stop at the regular time-out | TO RUN | |
 | TC-42 | Approve or reject overtime | Flagged page: approve one overtime item, reject another | Approve adds the overtime hours to the record. Reject keeps the regular hours only | TO RUN | |
 | TC-43 | Newer schedule takes over | Save a second schedule starting later | Earlier dates keep the old opening time. The new one applies from its start date | TO RUN | |
+
+### Promotions, pay changes and admin accounts
+| ID | Test | Steps | Expected result | Result | Evidence |
+|---|---|---|---|---|---|
+| TC-44 | Role dropdown | Staff page, Add Staff | Role is a dropdown with Staff and Admin. Choosing Admin and saving asks for confirmation | TO RUN | |
+| TC-45 | Create another admin | Add Staff with Role Admin, confirm, then log in as the new admin | The new admin can open the dashboard | TO RUN | |
+| TC-46 | Promote / Edit | Staff page, Promote / Edit: new position, new rate, effective today, reason, Save | The staff row shows the new position and rate. History lists the change and a starting-values row | TO RUN | |
+| TC-47 | Pay by effective date | Back-date a raise to a day inside the current cutoff, then Compute payroll | Days before the date are paid at the old rate and days from it at the new rate | TO RUN | |
+| TC-48 | Future date refused | Promote with an effective date in the future | Refused: "cannot be in the future" | TO RUN | |
+| TC-49 | Finalized period protected | Promote with an effective date on or before the end of the last finalized cutoff | Refused: payroll for that date is already finalized | TO RUN | |
+| TC-50 | Own admin role protected | Promote / Edit your own account and set the role to Staff | Refused: "You cannot remove your own Admin role." | TO RUN | |
+| TC-51 | Rejected overtime still pays regular hours | Reject an overtime-pending item in Flagged Entries, then Compute payroll | That day is included in payroll with its regular hours only | TO RUN | |
 
 ### CI/CD
 | ID | Test | Steps | Expected result | Result | Evidence |
@@ -167,6 +179,22 @@ ok  6: approving adds the overtime hours to the paid totals (total 11.25 h)
 ok  7: rejecting keeps only the regular hours
 ok  8: offline early time-in saved and flagged
 ok  9: a newer schedule takes over from its start date; earlier dates keep the old one
+```
+
+### 2.10 Simulated test of pay by effective date and promotions (2026-11-27)
+Run against an in-memory stand-in for the database, not the live system. It checks the rules only. Live results belong in TC-44 to TC-51.
+```
+ok  1: days before a raise are paid at the old rate, days from the raise at the new rate (2,560 = 8x100 + 8x100 + 8x120)
+ok  2: an employee with no recorded change is paid exactly as before
+ok  3: with no history, the current rate applies to every day (old behavior)
+ok  4: payroll still runs if the new overtime columns do not exist yet
+ok  5: shifts whose only rejected item was overtime are included in payroll
+ok  6: a promotion saves position and rate, keeps a starting-values row, updates the employee
+ok  7: a future effective date is refused
+ok  8: a change inside a finalized cutoff is refused; one after it is recorded
+ok  9: a back-dated entry does not override a later-dated one
+ok 10: an admin cannot remove their own Admin role
+ok 11: an empty change and an invalid role are refused
 ```
 
 ## 2a. Observations from testing

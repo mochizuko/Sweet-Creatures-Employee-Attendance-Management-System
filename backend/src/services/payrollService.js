@@ -15,6 +15,61 @@ function computePay({ totalHours, overtimeHours, rate, otMultiplier = 1.25 }) {
   return round2(regularHours * rate + overtimeHours * rate * otMultiplier);
 }
 
+/* ------------------------- Pay rate by date --------------------------- */
+
+const pad2 = (n) => String(n).padStart(2, '0');
+const ymd = (d) => (d instanceof Date
+  ? `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+  : String(d).slice(0, 10));
+
+// Hourly rate changes per employee, oldest first. Empty if no change was ever recorded
+// (or the database update has not been run), in which case the current rate applies to every day.
+async function loadRateTimeline(conn) {
+  const timeline = new Map();
+  try {
+    const [rows] = await conn.query(
+      `SELECT user_id, effective_from, hourly_rate FROM employee_change_history
+        WHERE hourly_rate IS NOT NULL ORDER BY user_id, effective_from, history_id`);
+    for (const r of rows) {
+      if (!timeline.has(r.user_id)) timeline.set(r.user_id, []);
+      timeline.get(r.user_id).push({ from: ymd(r.effective_from), rate: Number(r.hourly_rate) });
+    }
+  } catch (err) {
+    if (err.code !== 'ER_NO_SUCH_TABLE') throw err;
+  }
+  return timeline;
+}
+
+// The hourly rate that applied to this employee on a given day.
+function rateOn(timeline, userId, date, fallback) {
+  const list = timeline.get(userId);
+  if (!list) return fallback;
+  let rate = null;
+  for (const h of list) {
+    if (h.from <= date) rate = h.rate; else break;
+  }
+  return rate == null ? fallback : rate;
+}
+
+// Completed shifts to pay. A shift waiting on owner review is not paid yet. A rejected shift is not paid,
+// except when only the overtime was rejected: the regular hours are still paid.
+async function loadRecords(conn, start, end) {
+  const base = `SELECT user_id, attendance_date, status, total_hours_worked, overtime_hours
+                  FROM attendance_record
+                 WHERE time_out IS NOT NULL AND attendance_date BETWEEN ? AND ?`;
+  try {
+    const [rows] = await conn.query(
+      `${base} AND (review_status IN ('None', 'Approved')
+                    OR (review_status = 'Rejected' AND ot_pending_hours > 0 AND flag_reason LIKE 'Overtime pending approval%'))`,
+      [start, end]);
+    return rows;
+  } catch (err) {
+    if (err.code !== 'ER_BAD_FIELD_ERROR') throw err;
+    const [rows] = await conn.query(`${base} AND review_status IN ('None', 'Approved')`, [start, end]);
+    return rows;
+  }
+}
+
 /* ------------------------------ Cutoffs ------------------------------ */
 
 async function createCutoff({ start_date, end_date }) {
@@ -71,15 +126,7 @@ async function generatePayslips(cutoffId) {
       `SELECT user_id, hourly_rate FROM \`user\`
         WHERE account_role = 'Staff' AND account_status = 'Active'`
     );
-    // Only completed shifts that are not waiting on (or failed) owner review are paid.
-    const [records] = await conn.query(
-      `SELECT user_id, status, total_hours_worked, overtime_hours
-         FROM attendance_record
-        WHERE time_out IS NOT NULL
-          AND review_status IN ('None', 'Approved')
-          AND attendance_date BETWEEN ? AND ?`,
-      [cutoff.start_date, cutoff.end_date]
-    );
+    const records = await loadRecords(conn, cutoff.start_date, cutoff.end_date);
     const recsBy = new Map();
     for (const r of records) {
       if (!recsBy.has(r.user_id)) recsBy.set(r.user_id, []);
@@ -93,6 +140,7 @@ async function generatePayslips(cutoffId) {
     const byUser = new Map(existing.map((p) => [p.user_id, p]));
 
     const policy = await policyService.current(conn);
+    const timeline = await loadRateTimeline(conn);
     // Approved cash advances for this cutoff are deducted automatically (never more than the pay).
     const [adv] = await conn.query(
       `SELECT user_id, SUM(amount) AS total FROM cash_advance
@@ -112,6 +160,7 @@ async function generatePayslips(cutoffId) {
       const days = recs.length;
 
       let totalHours = 0, overtime = 0, shortMinutes = 0;
+      let basicAcc = 0, otAcc = 0, lateAcc = 0;
       for (const r of recs) {
         const worked = Number(r.total_hours_worked);
         totalHours += worked;
@@ -121,13 +170,19 @@ async function generatePayslips(cutoffId) {
         let shortfall = Math.max(0, Math.round(policy.standardShift * 60 - worked * 60));
         if (r.status === 'OnTime' && shortfall <= policy.graceMinutes) shortfall = 0;
         shortMinutes += shortfall;
+        // Each day is paid at the rate that applied on that day.
+        const dayRate = rateOn(timeline, e.user_id, ymd(r.attendance_date), rate);
+        basicAcc += policy.standardShift * dayRate;
+        otAcc += Number(r.overtime_hours) * dayRate * policy.otMultiplier;
+        lateAcc += (shortfall / 60) * dayRate;
       }
       totalHours = round2(totalHours);
       overtime = round2(overtime);
 
-      const basic = round2(days * policy.standardShift * rate);
-      const otPay = round2(overtime * rate * policy.otMultiplier);
-      const lateDeduction = round2((shortMinutes / 60) * rate);
+      const basic = round2(basicAcc);
+      const otPay = round2(otAcc);
+      const lateDeduction = round2(lateAcc);
+      const rateEnd = rateOn(timeline, e.user_id, ymd(cutoff.end_date), rate);
       const gross = Math.max(0, round2(basic + otPay - lateDeduction));
       const deduction = round2(Math.min(advanceBy.get(e.user_id) || 0, gross));
       const net = round2(gross - deduction);
@@ -139,7 +194,7 @@ async function generatePayslips(cutoffId) {
                   hourly_rate = ?, basic_pay = ?, overtime_pay = ?, late_undertime_minutes = ?,
                   late_undertime_deduction = ?, gross_pay = ?, cash_advance_deduction = ?, net_pay = ?
             WHERE payslip_id = ?`,
-          [days, totalHours, overtime, round2(shortMinutes / 60), rate, basic, otPay, shortMinutes,
+          [days, totalHours, overtime, round2(shortMinutes / 60), rateEnd, basic, otPay, shortMinutes,
            lateDeduction, gross, deduction, net, prev.payslip_id]
         );
         updated++;
@@ -150,7 +205,7 @@ async function generatePayslips(cutoffId) {
               hourly_rate, basic_pay, overtime_pay, late_undertime_minutes, late_undertime_deduction,
               gross_pay, cash_advance_deduction, net_pay, status)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Draft')`,
-          [e.user_id, cutoffId, days, totalHours, overtime, round2(shortMinutes / 60), rate, basic, otPay,
+          [e.user_id, cutoffId, days, totalHours, overtime, round2(shortMinutes / 60), rateEnd, basic, otPay,
            shortMinutes, lateDeduction, gross, deduction, net]
         );
         created++;

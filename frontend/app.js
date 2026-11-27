@@ -278,6 +278,7 @@ function renderSops() {
 function staffActions(person) {
   const id = escapeHtml(person.id);
   const buttons = [`<button class="action-button" type="button" data-staff-act="pin" data-id="${id}">Reset PIN</button>`];
+  buttons.push(`<button class="action-button" type="button" data-staff-act="promote" data-id="${id}">Promote / Edit</button>`);
   if (person.status === 'Locked') buttons.push(`<button class="action-button" type="button" data-staff-act="unlock" data-id="${id}">Unlock</button>`);
   if (person.status === 'Inactive') buttons.push(`<button class="action-button" type="button" data-staff-act="reactivate" data-id="${id}">Reactivate</button>`);
   else buttons.push(`<button class="action-button" type="button" data-staff-act="deactivate" data-id="${id}">Deactivate</button>`);
@@ -694,6 +695,7 @@ document.querySelector('#staff-form').addEventListener('submit', async event => 
   event.preventDefault();
   const form = event.currentTarget;
   const values = new FormData(form);
+  if (values.get('role') === 'Admin' && !window.confirm('Create an Admin account? Admins have full access to payroll and staff accounts, and are not tracked in attendance or payroll.')) return;
   const nameParts = String(values.get('name')).trim().split(/\s+/).filter(Boolean);
   if (nameParts.length < 2) {
     notify('Enter both a first and last name.', true);
@@ -929,6 +931,11 @@ document.querySelector('#staff-rows').addEventListener('click', async event => {
     return;
   }
 
+  if (act === 'promote') {
+    openPromoteDialog(person);
+    return;
+  }
+
   const actions = {
     deactivate: { url: `/employees/${person.id}/deactivate`, done: `${person.name} was deactivated and can no longer log in.`,
       confirm: `Deactivate ${person.name}? They will be unable to log in. Their attendance and payroll history is kept.` },
@@ -1007,4 +1014,68 @@ document.querySelector('#schedule-rows').addEventListener('click', async event =
   }
   await loadSchedules();
   notify('Schedule removed.');
+});
+
+/* ------------------------------ promotions and pay changes ------------ */
+
+async function openPromoteDialog(person) {
+  const dialog = document.querySelector('#promote-dialog');
+  const form = document.querySelector('#promote-form');
+  form.reset();
+  dialog.dataset.userId = person.id;
+  dialog.dataset.position = person.position;
+  dialog.dataset.rate = String(person.rate);
+  dialog.dataset.role = person.role;
+  document.querySelector('#promote-title').textContent = `Promote / Edit: ${person.name}`;
+  document.querySelector('#promote-current').textContent = `Current: ${person.position || 'no position'}, PHP ${formatAmount(person.rate)} per hour, ${person.role}`;
+  form.elements.position.value = person.position;
+  form.elements.rate.value = Number(person.rate) || '';
+  form.elements.role.value = person.role === 'Admin' ? 'Admin' : 'Staff';
+  form.elements.effectiveDate.value = manilaToday();
+  form.elements.effectiveDate.max = manilaToday();
+  document.querySelector('#promote-history').innerHTML = '<tr><td colspan="5">Loading history...</td></tr>';
+  dialog.showModal();
+  await loadPromotionHistory(person.id);
+}
+
+async function loadPromotionHistory(userId) {
+  const body = document.querySelector('#promote-history');
+  try {
+    const result = await apiRequest(`/employees/${userId}/promotions`);
+    const rows = result.data || [];
+    body.innerHTML = rows.length
+      ? rows.map(item => `<tr><td>${escapeHtml(formatDate(item.effectiveFrom))}</td><td>${escapeHtml(item.jobPosition || '--')}</td><td>${item.hourlyRate != null ? 'PHP ' + formatAmount(item.hourlyRate) : '--'}</td><td>${escapeHtml(item.role || '--')}</td><td>${escapeHtml(item.reason || '')}${item.changedBy ? `<br><small>by ${escapeHtml(item.changedBy)}</small>` : ''}</td></tr>`).join('')
+      : '<tr><td colspan="5">No changes recorded yet.</td></tr>';
+  } catch (error) {
+    body.innerHTML = '<tr><td colspan="5">History is not available yet.</td></tr>';
+  }
+}
+
+document.querySelector('#promote-form').addEventListener('submit', async event => {
+  if (event.submitter?.value !== 'save') return;
+  event.preventDefault();
+  const form = event.currentTarget;
+  const dialog = form.closest('dialog');
+  const values = new FormData(form);
+  const body = { effectiveDate: values.get('effectiveDate'), reason: String(values.get('reason') || '').trim() };
+  const position = String(values.get('position') || '').trim();
+  const rate = Number(values.get('rate'));
+  const role = values.get('role');
+  if (position && position !== dialog.dataset.position) body.jobPosition = position;
+  if (rate > 0 && rate !== Number(dialog.dataset.rate)) body.hourlyRate = rate;
+  if (role && role !== dialog.dataset.role) body.role = role;
+  if (!body.jobPosition && !body.hourlyRate && !body.role) {
+    notify('Change at least one of position, hourly rate or role.', true);
+    return;
+  }
+  if (body.role === 'Admin' && !window.confirm('Make this account an Admin? Admins have full access to payroll and staff accounts, and are not tracked in attendance or payroll.')) return;
+  try {
+    await apiRequest(`/employees/${dialog.dataset.userId}/promotions`, { method: 'POST', body });
+  } catch (error) {
+    notify(`Could not save the change: ${error.message}`, true);
+    return;
+  }
+  dialog.close('save');
+  await refresh(loadEmployees, loadDay);
+  notify('Change saved. Press Compute on the Payroll page to update open draft payslips.');
 });

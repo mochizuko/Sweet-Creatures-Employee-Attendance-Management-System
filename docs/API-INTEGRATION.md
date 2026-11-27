@@ -55,6 +55,8 @@ Amazon CloudFront  --  /*      -->  S3 bucket (static frontend)
 | `PATCH /:id/deactivate` | none | Sets status `Inactive`. History is kept. Cannot deactivate yourself |
 | `PATCH /:id/reactivate` | none | Sets status `Active` |
 | `PATCH /:id/pin` | `{ pin }` (4 to 6 digits) | Admin PIN reset |
+| `GET /:id/promotions` | none | Change history of one employee: effective date, position, rate, role, reason and who made the change. The first entry holds the starting values |
+| `POST /:id/promotions` | `{ effectiveDate, jobPosition?, hourlyRate?, role?, reason? }` | Records a promotion or pay change. `effectiveDate` is `YYYY-MM-DD` and cannot be in the future. At least one of position, rate or role is required. Refused with `409` if pay or position would change on or before the last finalized payroll cutoff. An admin cannot remove their own Admin role |
 
 ### 4.3 Attendance (`/api/attendance`)
 
@@ -85,6 +87,10 @@ Business rules: one time-in per day (`409` if repeated), breaks and time-out mus
 | `GET /payslips/:payslipId` | Admin or owner | Admin can read any. Staff can read their own finalized payslip |
 
 Net pay = basic pay + overtime pay - late/undertime deduction - cash advance deduction.
+
+Pay rate by date: each attendance day is paid at the hourly rate in force on that day, using the change history recorded through `POST /api/employees/:id/promotions`. An employee with no recorded change is paid at the current rate for every day. The rate shown on the payslip is the rate in force on the last day of the cutoff. After a back-dated change, regenerate the draft payslips of open cutoffs. Finalized payslips never change.
+
+Review status and pay: shifts that are Pending or Rejected are not paid, except that a shift whose only rejected item was overtime is still paid for its regular hours.
 
 ### 4.5 Cash advances (`/api/cash-advances`)
 

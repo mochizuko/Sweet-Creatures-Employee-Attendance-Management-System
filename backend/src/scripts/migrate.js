@@ -73,6 +73,20 @@ async function main() {
   await addColumn('attendance_record', 'ot_pending_hours', 'DECIMAL(5,2) NOT NULL DEFAULT 0.00');
   await addColumn('attendance_record', 'ot_approved_hours', 'DECIMAL(5,2) NOT NULL DEFAULT 0.00');
 
+  // Promotions and pay changes, with the date each change starts
+  await db.query(`CREATE TABLE IF NOT EXISTS employee_change_history (
+    history_id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    effective_from DATE NOT NULL,
+    job_position VARCHAR(100) NULL,
+    hourly_rate DECIMAL(10,2) NULL,
+    account_role VARCHAR(10) NULL,
+    reason VARCHAR(255) NULL,
+    changed_by_user_id INT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY ix_employee_change_user_date (user_id, effective_from)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+
   console.log('Migration complete.');
   process.exit(0);
 }
