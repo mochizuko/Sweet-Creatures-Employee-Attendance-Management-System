@@ -197,16 +197,16 @@
   }
   function renderSop() {
     $('#view-sop').innerHTML = `<div class="sop-layout"><div><input class="search" id="sop-search" type="search" placeholder="Search SOP" value="${esc(state.sopQuery)}" aria-label="Search SOP"><div id="sop-list"></div></div><article class="reader" id="reader"></article></div>`;
-    if (!state.selectedSop && matchMedia('(min-width:900px)').matches && state.sops[0]) state.selectedSop = state.sops[0].id;
+    if (!state.selectedSop && matchMedia('(min-width:900px)').matches && state.sops[0]) state.selectedSop = String(state.sops[0].id);
     renderSopList(); renderReader();
   }
   function renderSopList() {
     const list = sopFiltered();
-    $('#sop-list').innerHTML = list.length ? list.map(s => `<button class="sop-item" data-sop="${esc(s.id)}" ${state.selectedSop === s.id ? 'aria-current="true"' : ''}><b>${esc(s.title)}</b><small>${esc(s.version)} · Updated ${esc(monYear(s.updatedAt))}</small></button>`).join('')
+    $('#sop-list').innerHTML = list.length ? list.map(s => `<button class="sop-item" data-sop="${esc(s.id)}" ${String(state.selectedSop) === String(s.id) ? 'aria-current="true"' : ''}><b>${esc(s.title)}</b><small>${esc(s.version)} · Updated ${esc(monYear(s.updatedAt))}</small></button>`).join('')
       : `<div class="empty">${state.sops.length ? 'No policy matches your search.' : 'No policies published yet.'}</div>`;
   }
   function renderReader() {
-    const s = state.sops.find(x => x.id === state.selectedSop), el = $('#reader');
+    const s = state.sops.find(x => String(x.id) === String(state.selectedSop)), el = $('#reader');
     if (!s) { el.classList.remove('open'); el.innerHTML = '<div class="empty">Select a policy to read it.</div>'; return; }
     el.classList.add('open');
     el.innerHTML = `<button class="link-btn dark" data-act="sop-back">← Back</button><h2>${esc(s.title)}</h2><p class="meta">Version ${esc(s.version)}, updated ${esc(monYear(s.updatedAt))}</p>${bodyHtml(s.body)}`;
