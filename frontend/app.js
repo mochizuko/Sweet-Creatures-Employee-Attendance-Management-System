@@ -613,6 +613,7 @@ document.addEventListener('click', event => {
       const form = document.querySelector('#staff-form');
       form.reset();
       form.elements.role.value = 'Staff';
+      syncStaffRoleFields();
     }
     if (opener.dataset.open === 'review-dialog') {
       const entry = state.flagged.find(item => String(item.id) === opener.closest('tr').dataset.id);
@@ -713,8 +714,8 @@ document.querySelector('#staff-form').addEventListener('submit', async event => 
         email: values.get('email'),
         pin: values.get('pin'),
         role: values.get('role'),
-        jobPosition: values.get('position'),
-        hourlyRate: Number(values.get('rate'))
+        jobPosition: String(values.get('position') || '').trim() || (values.get('role') === 'Admin' ? 'Administrator' : ''),
+        hourlyRate: String(values.get('rate') || '').trim() === '' ? undefined : Number(values.get('rate'))
       }
     });
   } catch (error) {
@@ -1079,3 +1080,16 @@ document.querySelector('#promote-form').addEventListener('submit', async event =
   await refresh(loadEmployees, loadDay);
   notify('Change saved. Press Compute on the Payroll page to update open draft payslips.');
 });
+
+/* ------------------------------ Add Staff: role-based required fields -- */
+
+// Admin accounts do not clock in or get paid through the system, so position and rate are optional for them.
+function syncStaffRoleFields() {
+  const form = document.querySelector('#staff-form');
+  const isAdmin = form.elements.role.value === 'Admin';
+  form.elements.position.required = !isAdmin;
+  form.elements.rate.required = !isAdmin;
+  form.elements.position.placeholder = isAdmin ? 'Optional for Admin' : 'Position';
+  form.elements.rate.placeholder = isAdmin ? 'Optional for Admin' : '0.00';
+}
+document.querySelector('#staff-form').elements.role.addEventListener('change', syncStaffRoleFields);
