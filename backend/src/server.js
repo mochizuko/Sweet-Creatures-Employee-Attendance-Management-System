@@ -8,6 +8,7 @@ const authRoutes = require('./routes/authRoutes');
 const attendanceRoutes = require('./routes/attendanceRoutes');
 const payrollRoutes = require('./routes/payrollRoutes');
 const { policyRouter, sopRouter, cashRouter } = require('./routes/miscRoutes');
+const scheduleRoutes = require('./routes/scheduleRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -43,6 +44,7 @@ app.use('/api/payroll', payrollRoutes);
 app.use('/api/policy', policyRouter);
 app.use('/api/sops', sopRouter);
 app.use('/api/cash-advances', cashRouter);
+app.use('/api/schedules', scheduleRoutes);
 app.use(express.static(path.resolve(__dirname, '../../frontend')));
 
 // Start Server

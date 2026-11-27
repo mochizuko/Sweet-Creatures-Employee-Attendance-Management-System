@@ -29,7 +29,8 @@ const state = {
   cutoffs: [],
   payslips: [],
   summaryDay: null,
-  sops: []
+  sops: [],
+  schedules: []
 };
 
 const message = document.querySelector('#app-message');
@@ -178,6 +179,29 @@ async function loadPolicies() {
   renderPolicies();
   fillPolicyForm();
 }
+function clock12(t) {
+  const [h, m] = String(t).split(':').map(Number);
+  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+}
+async function loadSchedules() {
+  try {
+    const result = await apiRequest('/schedules');
+    state.schedules = result.data || [];
+  } catch (error) {
+    state.schedules = [];
+  }
+  renderSchedules();
+}
+function renderSchedules() {
+  const rows = document.querySelector('#schedule-rows');
+  if (!rows) return;
+  const badge = { Current: 'green', Upcoming: 'gold' };
+  rows.innerHTML = state.schedules.length
+    ? state.schedules.map(item => `<tr><td>${escapeHtml(formatDate(item.effectiveFrom))}</td><td>${item.effectiveTo ? escapeHtml(formatDate(item.effectiveTo)) : 'Until changed'}</td><td>${escapeHtml(clock12(item.timeInOpens))}</td><td>${item.regularTimeOut ? escapeHtml(clock12(item.regularTimeOut)) : '--'}</td><td><span class="badge badge-${badge[item.status] || 'neutral'}">${escapeHtml(item.status)}</span></td><td><button class="action-button" type="button" data-schedule-del="${escapeHtml(item.id)}">Remove</button></td></tr>`).join('')
+    : '<tr><td colspan="6">No schedule set. Staff can time in at any time.</td></tr>';
+  const form = document.querySelector('#schedule-form');
+  if (form && !form.elements.effectiveFrom.value) form.elements.effectiveFrom.value = manilaToday();
+}
 async function loadSops() {
   const result = await apiRequest('/sops?all=1');
   state.sops = Array.isArray(result) ? result : (result.data || []);
@@ -197,7 +221,7 @@ async function loadPayroll() {
   renderPayroll();
 }
 async function loadAll() {
-  await Promise.all([loadEmployees(), loadDay(), loadFlagged(), loadCash(), loadPolicies(), loadCutoffs(), loadSops()]);
+  await Promise.all([loadEmployees(), loadDay(), loadFlagged(), loadCash(), loadPolicies(), loadCutoffs(), loadSops(), loadSchedules()]);
   await loadPayroll();
   updateCashAdvanceLimit();
 }
@@ -946,4 +970,41 @@ document.querySelector('#pin-form').addEventListener('submit', async event => {
   form.reset();
   dialog.close('save');
   notify(`PIN reset for ${person ? person.name : 'the account'}. Give them the new PIN privately.`);
+});
+
+/* ------------------------------ time-in schedule ---------------------- */
+
+document.querySelector('#schedule-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const values = new FormData(event.currentTarget);
+  try {
+    await apiRequest('/schedules', {
+      method: 'POST',
+      body: {
+        effectiveFrom: values.get('effectiveFrom'),
+        effectiveTo: values.get('effectiveTo') || null,
+        timeInOpens: values.get('timeInOpens'),
+        regularTimeOut: values.get('regularTimeOut') || null,
+        otGraceMinutes: Number(values.get('otGrace'))
+      }
+    });
+  } catch (error) {
+    notify(`Could not save the schedule: ${error.message}`, true);
+    return;
+  }
+  await loadSchedules();
+  notify('Schedule saved.');
+});
+document.querySelector('#schedule-rows').addEventListener('click', async event => {
+  const button = event.target.closest('[data-schedule-del]');
+  if (!button) return;
+  if (!window.confirm('Remove this schedule? Earlier attendance records are not changed.')) return;
+  try {
+    await apiRequest(`/schedules/${button.dataset.scheduleDel}`, { method: 'DELETE' });
+  } catch (error) {
+    notify(`Could not remove the schedule: ${error.message}`, true);
+    return;
+  }
+  await loadSchedules();
+  notify('Schedule removed.');
 });

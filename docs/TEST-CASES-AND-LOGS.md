@@ -4,7 +4,7 @@ Sweet Creatures Attendance and Payroll System, deployed on AWS (ap-southeast-2).
 Prepared: November 26, 2026. Environment: live site https://d3qyrpbrdugqq1.cloudfront.net
 
 ## How to read this document
-- **Summary:** 36 test cases. 35 PASS, 1 NOT RUN, (last updated 2026-11-26).
+- **Summary:** 43 test cases. 31 PASS, 1 NOT RUN, 11 TO RUN: TC-03, TC-04, TC-08, TC-25 and TC-37 to TC-43 (last updated 2026-11-27).
 - **Section 1** lists the test cases. The **Result** column uses:
   - `PASS (observed)`: seen working on the live site during deployment, as noted in the log.
   - `NOT RUN`: skipped, with the reason given.
@@ -28,7 +28,7 @@ Prepared: November 26, 2026. Environment: live site https://d3qyrpbrdugqq1.cloud
 | ID | Test | Steps | Expected result | Result | Evidence |
 |---|---|---|---|---|---|
 | TC-07 | Staff list from database | Open Staff page | Demo staff (Kaye, Lysa, Trishia, Grace) listed with status | PASS (observed) | Staff list loaded |
-| TC-08 | Add staff | Add Staff, fill the form, save | New account appears in the list | PASS | |
+| TC-08 | Add staff | Add Staff, fill the form, save | New account appears in the list | TO RUN | |
 | TC-09 | Admin PIN reset | Staff page, Reset PIN, enter 4 to 6 digits | Success message. New PIN works at login, old one does not | PASS | Live site, 2026-11-26. PIN reset by admin, login with new PIN |
 | TC-10 | Deactivate and reactivate | Deactivate (confirm), then Reactivate | Status changes Inactive then Active. History is kept | PASS | Live site, 2026-11-26. Deactivate then reactivate |
 | TC-11 | PIN validation | Reset PIN with 3 digits or letters | Rejected with "PIN must be 4 to 6 digits" | PASS | Live site, 2026-11-26. Short PIN rejected |
@@ -57,7 +57,7 @@ Prepared: November 26, 2026. Environment: live site https://d3qyrpbrdugqq1.cloud
 ### Policy and SOP
 | ID | Test | Steps | Expected result | Result | Evidence |
 |---|---|---|---|---|---|
-| TC-25 | Save policy | Policy page, change grace period, save | New policy version in history | PASS (observed) | |
+| TC-25 | Save policy | Policy page, change grace period, save | New policy version in history | TO RUN | |
 | TC-26 | Create SOP | SOP page, + New SOP, status Published, save | Appears in the SOP table as v1, visible in the staff app | PASS | Live site, 2026-11-26 |
 | TC-27 | Draft SOP hidden | Create an SOP with status Draft | Visible to admin only, not in the staff app | PASS | Live site, 2026-11-26 |
 | TC-28 | Edit SOP | Edit an SOP and save | Version number increases | PASS | Live site, 2026-11-26 |
@@ -70,6 +70,17 @@ Prepared: November 26, 2026. Environment: live site https://d3qyrpbrdugqq1.cloud
 | TC-31 | No token | `GET /api/employees` without a token | `401` | PASS | PowerShell 2026-11-26: GET /api/employees without token returned 401 |
 | TC-32 | Wrong role | Call an admin endpoint with a staff token | `403` | PASS | PowerShell 2026-11-26: staff token (grace) on /api/employees returned 403 |
 | TC-33 | Data persists | Redeploy the API, reload the site | Data still present (it lives in RDS, not the container) | PASS (observed) | Data showed after force-redeploys |
+
+### Time-in schedule and overtime
+| ID | Test | Steps | Expected result | Result | Evidence |
+|---|---|---|---|---|---|
+| TC-37 | Save a time-in schedule | Policy page, Time-In Schedule: opens 07:30, From today, Until empty, regular time-out 16:30, Save | Listed as Current (or Upcoming if it starts later) | TO RUN | |
+| TC-38 | Early time-in refused | Staff app, Time In before the opening time (online) | Refused with "Time in opens at 7:30 AM." and no record is created | TO RUN | |
+| TC-39 | Time-in at opening time | Time in at or after 07:30 | Recorded normally | TO RUN | |
+| TC-40 | Offline early time-in | Time in offline before 07:30, then Sync | Saved and flagged "Timed in before opening time" | TO RUN | |
+| TC-41 | Late time-out held as overtime | Time out more than the grace period after the regular time-out | Flagged "Overtime pending approval (n h)". Paid hours stop at the regular time-out | TO RUN | |
+| TC-42 | Approve or reject overtime | Flagged page: approve one overtime item, reject another | Approve adds the overtime hours to the record. Reject keeps the regular hours only | TO RUN | |
+| TC-43 | Newer schedule takes over | Save a second schedule starting later | Earlier dates keep the old opening time. The new one applies from its start date | TO RUN | |
 
 ### CI/CD
 | ID | Test | Steps | Expected result | Result | Evidence |
@@ -143,6 +154,20 @@ POST /api/auth/login (username that does not exist)  -> {"message":"Invalid user
 | #1 "Add CI/CD pipeline" | 3091d71 | Check code green, deploy jobs failed | AWS sign-in refused (see incident 3) |
 | #2 "Stop tracking deployment helper files and zip" | 9c6dfdb | Check code green, deploy jobs failed | Same cause |
 | Re-run after trust policy fix | 9c6dfdb | All four jobs green | Detect changes, Check code, Deploy backend, Deploy frontend |
+
+### 2.9 Simulated logic test of the time-in schedule (2026-11-27)
+This was run against an in-memory stand-in for the database, not the live system. It checks the rules only. Live results belong in TC-37 to TC-43.
+```
+ok  1: no restriction before the schedule start date
+ok  2: online time-in at 07:00 refused with "Time in opens at 7:30 AM."
+ok  3: time-in exactly at 07:30 allowed, not flagged
+ok  4: time-out 10 min after the regular time-out (within grace): no overtime held
+ok  5: time-out at 20:00 -> regular hours paid (7.75 h), 3.5 h overtime held for approval
+ok  6: approving adds the overtime hours to the paid totals (total 11.25 h)
+ok  7: rejecting keeps only the regular hours
+ok  8: offline early time-in saved and flagged
+ok  9: a newer schedule takes over from its start date; earlier dates keep the old one
+```
 
 ## 2a. Observations from testing
 - The load balancer `/health` answered a direct request from the internet, so the ALB is reachable without going through CloudFront. Locking it to CloudFront is a planned hardening step.

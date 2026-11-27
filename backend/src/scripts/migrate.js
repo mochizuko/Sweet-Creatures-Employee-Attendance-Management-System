@@ -56,6 +56,23 @@ async function main() {
   await addColumn('payslip', 'late_undertime_minutes', 'INT NOT NULL DEFAULT 0');
   await addColumn('payslip', 'late_undertime_deduction', 'DECIMAL(10,2) NOT NULL DEFAULT 0.00');
 
+  // Time-in schedule: opening time and regular time-out by date range (no end date = until changed)
+  await db.query(`CREATE TABLE IF NOT EXISTS attendance_schedule (
+    schedule_id INT AUTO_INCREMENT PRIMARY KEY,
+    effective_from DATE NOT NULL,
+    effective_to DATE NULL,
+    time_in_opens TIME NOT NULL,
+    regular_time_out TIME NULL,
+    ot_grace_minutes INT NOT NULL DEFAULT 15,
+    created_by_user_id INT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY ix_attendance_schedule_from (effective_from)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+
+  // Overtime past the regular time-out waits for owner approval before it is paid
+  await addColumn('attendance_record', 'ot_pending_hours', 'DECIMAL(5,2) NOT NULL DEFAULT 0.00');
+  await addColumn('attendance_record', 'ot_approved_hours', 'DECIMAL(5,2) NOT NULL DEFAULT 0.00');
+
   console.log('Migration complete.');
   process.exit(0);
 }

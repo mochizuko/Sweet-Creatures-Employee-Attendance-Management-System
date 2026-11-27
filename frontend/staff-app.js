@@ -15,7 +15,7 @@
   const chip = (t, c = '') => `<span class="chip ${c}">${esc(t)}</span>`;
   const LABEL = { time_in: 'Time In', time_out: 'Time Out', break_start: 'Start Break', break_end: 'Return from Break' };
 
-  const state = { user: null, records: [], queue: [], policy: API.defaultPolicy, sops: [], payslips: [], advances: [], selectedSop: null, sopQuery: '', tab: 'home', busy: false, syncing: false, lastSync: null };
+  const state = { user: null, records: [], queue: [], policy: API.defaultPolicy, sops: [], schedule: null, payslips: [], advances: [], selectedSop: null, sopQuery: '', tab: 'home', busy: false, syncing: false, lastSync: null };
   let cap = null; 
 
   /* ---------- derived data ---------- */
@@ -103,6 +103,8 @@
   }
 
   /* ----- Home ----- */
+  const clock12 = t => { const [h, m] = String(t).split(':').map(Number); return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`; };
+  const minOf = t => { const [h, m] = String(t).split(':').map(Number); return h * 60 + m; };
   function renderHome() {
     const items = allItems(), todayK = API.dayKey(new Date());
     const s = sumDay(items.filter(i => i.date === todayK));
@@ -112,6 +114,12 @@
     if (s.tout) { head = `Timed out ${hhmm(s.tout.timestamp)}`; sub = `Worked ${fmtDur(workedMs(s, false))} today`; }
     else if (s.bs && !s.be) { head = `On break since ${hhmm(s.bs.timestamp)}`; sub = `Worked ${fmtDur(workedMs(s, true))} so far`; }
     else if (s.tin) { head = `Timed in ${hhmm(s.tin.timestamp)}`; sub = `Worked ${fmtDur(workedMs(s, true))} so far`; }
+
+    // Time-in schedule: the server enforces the opening time; this just explains it and disables the button.
+    const opens = state.schedule && state.schedule.timeInOpens;
+    const nowD = new Date();
+    if (opens && !s.tin && nowD.getHours() * 60 + nowD.getMinutes() < minOf(opens)) { s.canIn = false; sub = `Time in opens at ${clock12(opens)}.`; }
+    if (s.tin && !s.tout && state.schedule && state.schedule.regularTimeOut) sub += ` · Regular time-out ${clock12(state.schedule.regularTimeOut)}`;
 
     const syncChip = q ? chip(online ? `Online · ${q} waiting to sync` : `Offline · ${q} queued`, 'amber')
                        : chip(online ? 'Online · all synced' : 'Offline · nothing waiting', online ? 'green' : 'amber');
@@ -260,13 +268,14 @@
   /* ---------- data flow ---------- */
   async function refresh() {
     const u = state.user;
-    const [rec, pol, sops, pay, cash] = await Promise.allSettled([API.getMyRecords(u), API.getPolicy(), API.getSops(), API.getPayslips(u), API.getAdvances(u)]);
+    const [rec, pol, sops, pay, cash, sch] = await Promise.allSettled([API.getMyRecords(u), API.getPolicy(), API.getSops(), API.getPayslips(u), API.getAdvances(u), API.getSchedule()]);
     for (const r of [rec, pol, sops, pay, cash]) if (r.status === 'rejected' && r.reason?.code === 'unauthorized') return signOut(true);
     if (rec.status === 'fulfilled') state.records = rec.value;
     if (pol.status === 'fulfilled') state.policy = pol.value;
     if (sops.status === 'fulfilled') state.sops = sops.value;
     if (pay.status === 'fulfilled') state.payslips = pay.value;
     if (cash.status === 'fulfilled') state.advances = cash.value;
+    if (sch.status === 'fulfilled') state.schedule = sch.value;
     state.queue = (await API.queue.all()).filter(q => q.staffId === u.id);
     renderAll();
   }

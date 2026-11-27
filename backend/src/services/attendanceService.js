@@ -1,5 +1,6 @@
 const db = require('../config/db');
 const policyService = require('./policyService');
+const scheduleService = require('./scheduleService');
 const { AppError } = require('../utils/http');
 const { manilaParts, toIso, minutesOf, round2, addDays, workedHours } = require('../utils/time');
 
@@ -79,11 +80,18 @@ async function recordEvent(user, input = {}) {
       const [ex] = await conn.query(
         'SELECT record_id FROM attendance_record WHERE user_id = ? AND attendance_date = ? FOR UPDATE', [user.id, date]);
       if (ex.length) throw new AppError('You already timed in today.', 409, 'invalid');
+      // Time-in schedule: online time-ins before the opening time are refused; offline ones are kept but flagged.
+      const schedule = await scheduleService.forDate(date, conn);
+      const opensLabel = schedule ? scheduleService.label(schedule.timeInOpens) : null;
+      const beforeOpening = !!schedule && scheduleService.minutes(time) < scheduleService.minutes(schedule.timeInOpens);
+      if (beforeOpening && !offline) throw new AppError(`Time in opens at ${opensLabel}.`, 409, 'invalid');
+      const flagReason = [offline ? 'Logged while offline' : null, beforeOpening ? `Timed in before opening time (${opensLabel})` : null]
+        .filter(Boolean).join('; ') || null;
       const late = minutesOf(time) > minutesOf(policy.shiftStart) + policy.graceMinutes;
       const [r] = await conn.query(
         `INSERT INTO attendance_record (user_id, attendance_date, time_in, status, review_status, flag_reason)
          VALUES (?, ?, ?, ?, ?, ?)`,
-        [user.id, date, time, late ? 'Late' : 'OnTime', offline ? 'Pending' : 'None', offline ? 'Logged while offline' : null]
+        [user.id, date, time, late ? 'Late' : 'OnTime', flagReason ? 'Pending' : 'None', flagReason]
       );
       recordId = r.insertId;
     } else {
@@ -103,12 +111,33 @@ async function recordEvent(user, input = {}) {
         await conn.query('UPDATE attendance_record SET return_from_break = ? WHERE record_id = ?', [time, recordId]);
       } else {
         if (open.break_start && !open.return_from_break) throw new AppError('Finish your break before timing out.', 409, 'invalid');
-        const hours = workedHours(open.time_in, time, open.break_start, open.return_from_break);
+        let hours = workedHours(open.time_in, time, open.break_start, open.return_from_break);
+
+        // Time-outs after the regular time-out (plus grace): hours past it are held as overtime pending approval.
+        let otPending = 0;
+        const shiftDate = scheduleService.ymd(open.attendance_date);
+        const schedule = await scheduleService.forDate(shiftDate, conn);
+        if (schedule && schedule.regularTimeOut && date === shiftDate
+            && scheduleService.minutes(open.time_in) < scheduleService.minutes(schedule.regularTimeOut)
+            && scheduleService.minutes(time) > scheduleService.minutes(schedule.regularTimeOut) + schedule.otGraceMinutes) {
+          const regular = workedHours(open.time_in, schedule.regularTimeOut, open.break_start, open.return_from_break);
+          if (Number.isFinite(regular) && regular >= 0 && hours > regular) {
+            otPending = round2(hours - regular);
+            hours = round2(regular);
+          }
+        }
+
         const t = totals(hours, policy);
         await conn.query(
           `UPDATE attendance_record
               SET time_out = ?, total_hours_worked = ?, overtime_hours = ?, undertime_hours = ?
             WHERE record_id = ?`, [time, t.total, t.overtime, t.undertime, recordId]);
+        if (otPending > 0) {
+          const reason = [open.flag_reason, `Overtime pending approval (${otPending} h)`].filter(Boolean).join('; ').slice(0, 150);
+          await conn.query(
+            "UPDATE attendance_record SET ot_pending_hours = ?, review_status = 'Pending', flag_reason = ? WHERE record_id = ?",
+            [otPending, reason, recordId]);
+        }
       }
     }
 
@@ -216,7 +245,7 @@ async function flagged({ status } = {}) {
       ORDER BY ar.attendance_date DESC, ar.record_id DESC LIMIT 200`, params);
   return rows.map((r) => ({
     id: r.record_id, userId: r.user_id, name: fullName(r), date: r.attendance_date,
-    timeIn: hhmm(r.time_in), timeOut: hhmm(r.time_out), reason: r.flag_reason || 'Flagged',
+    timeIn: hhmm(r.time_in), timeOut: hhmm(r.time_out), reason: r.flag_reason || 'Flagged', otHours: Number(r.ot_pending_hours || 0),
     status: r.review_status, notes: r.review_notes || '', reviewedAt: r.reviewed_at,
   }));
 }
@@ -239,6 +268,16 @@ async function review(recordId, adminId, { decision, notes, timeOut } = {}) {
       await conn.query(
         'UPDATE attendance_record SET time_out = ?, total_hours_worked = ?, overtime_hours = ?, undertime_hours = ? WHERE record_id = ?',
         [`${timeOut}:00`, t.total, t.overtime, t.undertime, recordId]);
+    }
+    // Approving held overtime adds those hours to the paid totals. Rejecting leaves only the regular hours.
+    const otPending = Number(r.ot_pending_hours || 0);
+    if (decision === 'Approved' && otPending > 0 && r.time_out) {
+      const policy = await policyService.current(conn);
+      const full = round2(Number(r.total_hours_worked || 0) + otPending);
+      const t = totals(full, policy);
+      await conn.query(
+        'UPDATE attendance_record SET total_hours_worked = ?, overtime_hours = ?, undertime_hours = ?, ot_approved_hours = ? WHERE record_id = ?',
+        [t.total, t.overtime, t.undertime, otPending, recordId]);
     }
     await conn.query(
       `UPDATE attendance_record

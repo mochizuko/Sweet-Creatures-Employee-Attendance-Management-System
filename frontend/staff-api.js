@@ -14,7 +14,8 @@
     policy:   ['GET',  '/api/policy'],           // -> policy
     sops:     ['GET',  '/api/sops'],             // -> [sop] (published only)
     payslips: ['GET',  '/api/payroll/payslips/me'], // finalized only (exists in payrollRoutes)
-    advances: ['GET',  '/api/cash-advances/mine']   // NOT in backend yet
+    advances: ['GET',  '/api/cash-advances/mine'],  // own cash advances
+    schedule: ['GET',  '/api/schedules/today']      // time-in opening time and regular time-out for today
   };
 
   // localStorage keys (local mode). Align these with the Admin code.
@@ -141,6 +142,7 @@
     },
     async records(user) { return read(KEYS.records, []).filter(r => r.staffId === user.id); },
     async policy() { return { ...defaultPolicy, ...read(KEYS.policy, {}) }; },
+    async schedule() { return null; },
     async payslips(user) { return read(KEYS.payslips, []).filter(p => p.staffId === user.id && p.status === 'Finalized'); },
     async advances(user) { return read(KEYS.advances, []).filter(a => a.staffId === user.id); },
     async sops() { return read(KEYS.sops, []).filter(s => !s.status || String(s.status).toLowerCase() === 'published'); },
@@ -207,6 +209,7 @@
     },
     records: user => http(ENDPOINTS.records, null, { staffId: user.id }),
     policy: () => http(ENDPOINTS.policy),
+    schedule: () => http(ENDPOINTS.schedule).then(r => (r && r.data) || null).catch(() => null),
     sops: () => http(ENDPOINTS.sops),
     payslips: () => http(ENDPOINTS.payslips).then(arr).then(a => a.filter(p => p.status === 'Finalized').map(normalizePayslip)),
     advances: () => http(ENDPOINTS.advances).then(arr),
@@ -239,6 +242,7 @@
     login: async (u, p) => { requireLoginArgs(u, p); return impl.login(u, p); },
     getMyRecords: user => { requireSession(); return impl.records(user); },
     getPolicy: () => { requireSession(); return impl.policy(); },
+    getSchedule: () => { requireSession(); return impl.schedule(); },
     getSops: () => { requireSession(); return impl.sops(); },
     getPayslips: user => { requireSession(); return impl.payslips(user); },
     getAdvances: user => { requireSession(); return impl.advances(user); },

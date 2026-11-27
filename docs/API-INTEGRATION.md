@@ -112,7 +112,23 @@ Net pay = basic pay + overtime pay - late/undertime deduction - cash advance ded
 | `POST /` | Admin | `{ title, body, status }` | `status` is `published` or `draft`. Starts at version `v1` |
 | `PUT /:id` | Admin | `{ title, body, status }` | Each save increases the version |
 
-### 4.8 Utility
+### 4.8 Time-in schedule (`/api/schedules`)
+
+| Method and path | Access | Body | Notes |
+|---|---|---|---|
+| `GET /today` | Any logged-in user | none | The schedule in force today, or `null`: `{ id, timeInOpens, regularTimeOut, otGraceMinutes }`. The staff app uses it to show when time-in opens |
+| `GET /` | Admin | none | All schedules with a `status` of `Current`, `Upcoming`, `Superseded` or `Expired` |
+| `POST /` | Admin | `{ effectiveFrom, effectiveTo?, timeInOpens, regularTimeOut?, otGraceMinutes? }` | Dates are `YYYY-MM-DD`, times are `HH:MM`. Leaving `effectiveTo` empty keeps the schedule until a newer one starts. Grace defaults to 15 minutes |
+| `DELETE /:id` | Admin | none | Removes a schedule. Existing attendance records are not changed |
+
+Rules applied by `POST /api/attendance`:
+- If a schedule is in force and an online time-in arrives before `timeInOpens`, the request is refused with `409` and the message "Time in opens at 7:30 AM." No record is created.
+- An offline time-in before the opening time is saved but flagged "Timed in before opening time" for the administrator to review.
+- If `regularTimeOut` is set and a time-out is later than `regularTimeOut` plus the grace period, the hours after `regularTimeOut` are held as overtime. The record is flagged "Overtime pending approval (n h)" and its paid hours stop at the regular time-out.
+- `PATCH /api/attendance/:id/review` with `Approved` adds the held overtime hours to the paid totals. `Rejected` leaves only the regular hours.
+- With no schedule, there is no restriction and behavior is unchanged.
+
+### 4.9 Utility
 
 | Method and path | Access | Notes |
 |---|---|---|
