@@ -19,8 +19,8 @@ Prepared: November 26, 2026. Environment: live site https://d3qyrpbrdugqq1.cloud
 |---|---|---|---|---|---|
 | TC-01 | Admin login | Open the site, enter admin username and PIN | Dashboard opens | PASS (observed) | Admin dashboard loaded on the live site |
 | TC-02 | Wrong PIN | Log in with a wrong PIN | Message "Invalid username or PIN" with attempts left | PASS | Live site, 2026-11-26 |
-| TC-03 | Account lockout | Enter a wrong PIN 5 times for a demo account | Account locked, login returns "Account is locked" | TO RUN | |
-| TC-04 | Admin unlock | Staff page, Unlock on the locked account | Status becomes Active, user can log in | TO RUN | |
+| TC-03 | Account lockout | Enter a wrong PIN 5 times for a demo account | Account locked, login returns "Account is locked" | PASS (observed) | |
+| TC-04 | Admin unlock | Staff page, Unlock on the locked account | Status becomes Active, user can log in | PASS (observed) | |
 | TC-05 | Staff login | Log in as a demo staff on the admin login page | Redirected to the staff app | PASS (observed) | Staff app used for photo upload test |
 | TC-06 | Deactivated account | Deactivate a demo staff, then try to log in as them | Login refused with "Account is deactivated" | PASS | Live site, 2026-11-26. Deactivated account refused at login |
 
@@ -28,7 +28,7 @@ Prepared: November 26, 2026. Environment: live site https://d3qyrpbrdugqq1.cloud
 | ID | Test | Steps | Expected result | Result | Evidence |
 |---|---|---|---|---|---|
 | TC-07 | Staff list from database | Open Staff page | Demo staff (Kaye, Lysa, Trishia, Grace) listed with status | PASS (observed) | Staff list loaded |
-| TC-08 | Add staff | Add Staff, fill the form, save | New account appears in the list | TO RUN | |
+| TC-08 | Add staff | Add Staff, fill the form, save | New account appears in the list | PASS (observed) | |
 | TC-09 | Admin PIN reset | Staff page, Reset PIN, enter 4 to 6 digits | Success message. New PIN works at login, old one does not | PASS | Live site, 2026-11-26. PIN reset by admin, login with new PIN |
 | TC-10 | Deactivate and reactivate | Deactivate (confirm), then Reactivate | Status changes Inactive then Active. History is kept | PASS | Live site, 2026-11-26. Deactivate then reactivate |
 | TC-11 | PIN validation | Reset PIN with 3 digits or letters | Rejected with "PIN must be 4 to 6 digits" | PASS | Live site, 2026-11-26. Short PIN rejected |
